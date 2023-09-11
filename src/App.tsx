@@ -1,6 +1,6 @@
 import React from "react";
 import "./App.css";
-import { TableModel } from "./TableModel";
+import { DataModel } from "./DataModel";
 import * as GUI from "@babylonjs/gui/2D";
 import {
   Nullable,
@@ -14,17 +14,22 @@ import {
   MeshBuilder,
   Scene,
   Mesh,
+  Color3,
   PointerDragBehavior,
   AbstractMesh,
   GroundMesh,
+  HighlightLayer,
 } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
 import SceneComponent from "babylonjs-hook"; // if you install 'babylonjs-hook' NPM.
 import "./App.css";
 import * as tables from "./data/tables.json";
 
-const tableList: TableModel[] = [];
+const dataList: DataModel[] = [];
+var currentMesh: Nullable<AbstractMesh>;
+
 const onSceneReady = (scene: Scene) => {
+  const hl = new HighlightLayer("hl1", scene);
   // This creates and positions a free camera (non-mesh)
   const camera = new ArcRotateCamera(
     "camera1",
@@ -44,10 +49,11 @@ const onSceneReady = (scene: Scene) => {
   camera.attachControl(canvas, true);
 
   // read the initial data if not read yet.
-  if (tableList.length === 0) {
+  if (dataList.length === 0) {
     for (let table of Array.from(tables)) {
-      tableList.push(
-        new TableModel(
+      dataList.push(
+        new DataModel(
+          table.type,
           table.name,
           table.position_x,
           table.position_y,
@@ -61,73 +67,79 @@ const onSceneReady = (scene: Scene) => {
   // Default intensity is 1. Let's dim the light a small amount
   light.intensity = 0.7;
 
-  var ground:GroundMesh = MeshBuilder.CreateGround("ground", { width: 20, height: 20 }, scene);
+  var ground: GroundMesh = MeshBuilder.CreateGround(
+    "ground",
+    { width: 20, height: 20 },
+    scene
+  );
   InitializeAsync(scene);
   AddUIControl(scene);
 
   var startingPoint: Nullable<Vector3>;
-  var currentMesh: Nullable<AbstractMesh>;
-
-    var getGroundPosition = function () {
-        var pickinfo = scene.pick(scene.pointerX, scene.pointerY, function (mesh) { return mesh == ground; });
-        if (pickinfo.hit) {
-            return pickinfo.pickedPoint;
-        }
-
-        return null;
-    }
-
-    var pointerDown = function (mesh: Nullable<AbstractMesh>) {
-            currentMesh = mesh;
-            console.log("currentMesh");
-            console.log(currentMesh);
-            startingPoint = getGroundPosition();
-            if (startingPoint) { // we need to disconnect camera from canvas
-                setTimeout(function () {
-                    camera.detachControl();
-                }, 0);
-            }
-    }
-
-    var pointerUp = function () {
-        if (startingPoint) {
-            camera.attachControl(canvas, true);
-            startingPoint = null;
-            return;
-        }
-    }
-
-    var pointerMove = function () {
-        if (!startingPoint) {
-            return;
-        }
-        var current = getGroundPosition();
-        if (!current) {
-            return;
-        }
-
-        var diff = current.subtract(startingPoint);
-        currentMesh!.position.addInPlace(diff);
-
-        startingPoint = current;
-
-    }
-
-    scene.onPointerObservable.add((pointerInfo: PointerInfo) => {      		
-        switch (pointerInfo.type) {
-			case PointerEventTypes.POINTERDOWN:
-				if(pointerInfo.pickInfo!.hit && pointerInfo.pickInfo!.pickedMesh != ground) {
-                    pointerDown(pointerInfo.pickInfo!.pickedMesh)
-                }
-				break;
-			case PointerEventTypes.POINTERUP:
-                    pointerUp();
-				break;
-			case PointerEventTypes.POINTERMOVE:          
-                    pointerMove();
-				break;
-        }
+  var getGroundPosition = function () {
+    var pickinfo = scene.pick(scene.pointerX, scene.pointerY, function (mesh) {
+      return mesh == ground;
     });
+    if (pickinfo.hit) {
+      return pickinfo.pickedPoint;
+    }
+
+    return null;
+  };
+
+  var pointerDown = function (mesh: Nullable<AbstractMesh>) {
+    hl.removeAllMeshes();
+    hl.addMesh(mesh as Mesh, Color3.Green());
+    currentMesh = mesh;
+    startingPoint = getGroundPosition();
+    if (startingPoint) {
+      setTimeout(function () {
+        camera.detachControl();
+      }, 0);
+    }
+  };
+
+  var pointerUp = function () {
+    if (startingPoint) {
+      camera.attachControl(canvas, true);
+      startingPoint = null;
+      return;
+    }
+  };
+
+  var pointerMove = function () {
+    if (!startingPoint) {
+      return;
+    }
+    var current = getGroundPosition();
+    if (!current) {
+      return;
+    }
+
+    var diff = current.subtract(startingPoint);
+    currentMesh!.position.addInPlace(diff);
+
+    startingPoint = current;
+  };
+
+  scene.onPointerObservable.add((pointerInfo: PointerInfo) => {
+    switch (pointerInfo.type) {
+      case PointerEventTypes.POINTERDOWN:
+        if (
+          pointerInfo.pickInfo!.hit &&
+          pointerInfo.pickInfo!.pickedMesh != ground
+        ) {
+          pointerDown(pointerInfo.pickInfo!.pickedMesh);
+        }
+        break;
+      case PointerEventTypes.POINTERUP:
+        pointerUp();
+        break;
+      case PointerEventTypes.POINTERMOVE:
+        pointerMove();
+        break;
+    }
+  });
 };
 
 const onRender = (scene: Scene) => {
@@ -138,24 +150,26 @@ const onRender = (scene: Scene) => {
   // }
 };
 
-function InitializeAsync(scene: Scene){
-  tableList.map((table: TableModel) => {
-    return CreateChairAsync(
-      scene,
-      table.name,
-      table.position_x,
-      table.position_y,
-      table.position_z
-    );
-  });
-  tableList.map((table: TableModel) => {
-    return CreateTableAsync(
-      scene,
-      table.name,
-      table.position_x,
-      table.position_y,
-      table.position_z
-    );
+function InitializeAsync(scene: Scene) {
+  dataList.map((data: DataModel) => {
+    if (data.type === "chair") {
+      CreateChairAsync(
+        scene,
+        data.name,
+        data.position_x,
+        data.position_y,
+        data.position_z
+      );
+    } else if (data.type === "table") {
+      CreateTableAsync(
+        scene,
+        data.name,
+        data.position_x,
+        data.position_y,
+        data.position_z
+      );
+    }
+    return true;
   });
 }
 
@@ -194,6 +208,7 @@ async function CreateChairAsync(
   chair.map(
     (mesh) => (mesh.position = new Vector3(position_x, position_y, position_z))
   );
+  chair.map((mesh) => (mesh.name = name));
 
   var pointerDragBehavior1 = new PointerDragBehavior({
     dragPlaneNormal: new Vector3(0, 1, 0),
@@ -211,7 +226,6 @@ async function CreateChairAsync(
     console.log(event);
   });
   chair.map((mesh) => mesh.addBehavior(pointerDragBehavior1));
-  // box.position.y = 1;
 
   return chair;
 }
@@ -238,7 +252,6 @@ async function CreateTableAsync(
     (mesh) => (mesh.position = new Vector3(position_x, position_y, position_z))
   );
 
-
   var pointerDragBehavior1 = new PointerDragBehavior({
     dragPlaneNormal: new Vector3(0, 1, 0),
   });
@@ -259,7 +272,7 @@ async function CreateTableAsync(
   return table;
 }
 
-function AddUIControl(scene: Scene){
+function AddUIControl(scene: Scene) {
   const advancedTexture = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
   const addTableButton = GUI.Button.CreateSimpleButton(
     "addTableButton",
@@ -277,10 +290,11 @@ function AddUIControl(scene: Scene){
   addTableButton.onPointerClickObservable.add(function () {
     CreateTableAsync(scene, "table", 0, 0, 0);
   });
+
   const addChiarButton = GUI.Button.CreateSimpleButton(
     "addChiarButton",
     "Add Chair"
-  );
+  );  
   addChiarButton.width = "100px";
   addChiarButton.height = "20px";
   addChiarButton.horizontalAlignment = GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -293,7 +307,27 @@ function AddUIControl(scene: Scene){
   addChiarButton.onPointerClickObservable.add(function () {
     CreateChairAsync(scene, "table", 0, 0, 0);
   });
+
+  const removeButton = GUI.Button.CreateSimpleButton(
+    "removeButton",
+    "Remove"
+  );
+  
+  removeButton.width = "100px";
+  removeButton.height = "20px";
+  removeButton.horizontalAlignment = GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
+  removeButton.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_TOP;
+  removeButton.color = "white";
+  removeButton.background = "blue";
+  removeButton.fontSize = 12;
+  removeButton.top = "50px";
+  removeButton.left = "10px";
+  removeButton.onPointerClickObservable.add(function () {
+    currentMesh?.dispose();
+  });
+
   advancedTexture.addControl(addTableButton);
   advancedTexture.addControl(addChiarButton);
+  advancedTexture.addControl(removeButton);
 }
 export default App;
