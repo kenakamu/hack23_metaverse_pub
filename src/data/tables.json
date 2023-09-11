@@ -1,0 +1,20 @@
+[
+    {
+        "name":"table1",
+        "position_x":0,
+        "position_y":0,
+        "position_z":0        
+    },
+    {
+        "name":"table2",
+        "position_x":1,
+        "position_y":0,
+        "position_z":2        
+    },
+    {
+        "name":"table3",
+        "position_x":-1,
+        "position_y":0,
+        "position_z":3        
+    }
+]
