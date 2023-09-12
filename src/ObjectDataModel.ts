@@ -1,4 +1,4 @@
-class ObjectDataModel {
+export class ObjectDataModel {
     constructor(
       public name: string,
       public type: string,
