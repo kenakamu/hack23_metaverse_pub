@@ -4,34 +4,39 @@
         "name":"table1",
         "position_x":0,
         "position_y":0,
-        "position_z":0        
+        "position_z":0,
+        "rotation_y":0    
     },
     {
         "type":"table",
         "name":"table2",
         "position_x":1,
         "position_y":0,
-        "position_z":2        
+        "position_z":2,
+        "rotation_y":0      
     },
     {
         "type":"table",
         "name":"table3",
         "position_x":-1,
         "position_y":0,
-        "position_z":3        
+        "position_z":3,
+        "rotation_y":0     
     },
     {
         "type":"chair",
         "name":"chair1",
         "position_x":-3,
         "position_y":0,
-        "position_z":5        
+        "position_z":5,
+        "rotation_y":0     
     },
     {
         "type":"chair",
         "name":"chair2",
         "position_x":-10,
         "position_y":0,
-        "position_z":3        
+        "position_z":3,
+        "rotation_y":0 
     }
 ]
