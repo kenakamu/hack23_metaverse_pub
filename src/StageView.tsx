@@ -328,10 +328,10 @@ export const StageView = (): JSX.Element => {
         currentMesh.rotation = currentMesh.rotationQuaternion!.toEulerAngles();
         dataList.some((mesh: any) => {
           if (mesh.name === currentMesh!.name) {
-            mesh.position_x = currentMesh!.position.x;
-            mesh.position_y = currentMesh!.position.y;
-            mesh.position_z = currentMesh!.position.z;
-            mesh.rotation_y = currentMesh!.rotation.y;
+            mesh.position.x = currentMesh!.position.x;
+            mesh.position.y = currentMesh!.position.y;
+            mesh.position.z = currentMesh!.position.z;
+            mesh.rotation.y = currentMesh!.rotation.y;
             setData("meshes", dataList);
             return true;
           }
