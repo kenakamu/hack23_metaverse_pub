@@ -7,8 +7,9 @@ import * as BABYLON from "@babylonjs/core";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
 import SceneComponent from "babylonjs-hook";
 import "./App.css";
-import * as meshesData from "./data/meshes.json";
+import { Inspector } from "@babylonjs/inspector";
 
+// ... YOUR SCENE CREATION
 export const StageView = (): JSX.Element => {
   const dataList: MeshDataModel[] = [];
   let ground: BABYLON.GroundMesh;
@@ -17,26 +18,32 @@ export const StageView = (): JSX.Element => {
   let hl: BABYLON.HighlightLayer;
   let canvas: BABYLON.Nullable<HTMLCanvasElement>;
   let removeButton: GUI.Button;
+  let meshesData: any = [];
   const onSceneReady = (scene: BABYLON.Scene) => {
+    //Inspector.Show(scene, {});
     // Create Highlight Layer to show which mesh is selected
     hl = new BABYLON.HighlightLayer("hl1", scene);
     camera = new BABYLON.ArcRotateCamera(
       "camera1",
-      0,
-      0,
-      0,
-      new BABYLON.Vector3(0, 5, -20),
+      Math.PI / 2,
+      Math.PI / 3,
+      20,
+      new BABYLON.Vector3(0, 0, 0),
       scene
     );
     camera.wheelPrecision = 50;
-    camera.setTarget(BABYLON.Vector3.Zero());
     canvas = scene.getEngine().getRenderingCanvas();
     camera.attachControl(canvas, true);
 
     // load the initial data if not yet.
-    // meshesData will be retrieved from Cosmos DB
     if (dataList.length === 0) {
-      for (let mesh of Array.from(meshesData)) {
+      var meshesJson = getData("meshes");
+      if (meshesJson === null) {
+        meshesJson = "[]";
+      }
+
+      meshesData = JSON.parse(meshesJson!);
+      for (let mesh of meshesData) {
         dataList.push(
           new MeshDataModel(
             mesh.type,
@@ -94,58 +101,50 @@ export const StageView = (): JSX.Element => {
     position_z: number,
     rotation_y: number
   ) {
-    let mesh_model = (
+    // Getting the mesh from the glb file and take the second mesh as it's model.
+    // This may vary depending on the model types.
+    let mesh = (
       await BABYLON.SceneLoader.ImportMeshAsync(
         "",
         "https://raw.githubusercontent.com/kenakamu/hack23_metaverse_pub/main/src/data/",
         `${type}.glb`,
         scene,
-        function (meshes) {}
+        (meshes) => {}
       )
-    ).meshes;
-    mesh_model.map((mesh) => (mesh.scaling = new BABYLON.Vector3(2, 2, 2)));
-    mesh_model.map((mesh) => (mesh.rotation.y = rotation_y));
-    mesh_model.map(
-      (mesh) =>
-        (mesh.position = new BABYLON.Vector3(
-          position_x,
-          position_y,
-          position_z
-        ))
-    );
-
-    mesh_model.map((mesh) => (mesh.name = name));
+    ).meshes[1];
+    mesh.parent = null;
+    mesh.scaling = new BABYLON.Vector3(2, 2, 2);
+    mesh.rotate(BABYLON.Axis.Y, rotation_y, BABYLON.Space.WORLD);
+    mesh.position = new BABYLON.Vector3(position_x, position_y, position_z);
+    mesh.name = name;
 
     var pointerDragBehavior1 = new BABYLON.PointerDragBehavior({
       dragPlaneNormal: new BABYLON.Vector3(0, 1, 0),
     });
     pointerDragBehavior1.onDragStartObservable.add((event) => {
-      //console.log("dragStart");
     });
     pointerDragBehavior1.onDragObservable.add((event) => {
-      console.log("drag");
-      console.log(currentMesh);
     });
     pointerDragBehavior1.onDragEndObservable.add((event) => {
-      //console.log("dragEnd");
-      //console.log(event);
-      Array.from(meshesData).some(function (mesh) {
-        console.log("found ", currentMesh!.name, " ", mesh.name);
+      // When the drag ends, we save it's location.
+      dataList.some((mesh: any) => {
         if (mesh.name === currentMesh!.name) {
           mesh.position_x = currentMesh!.position.x;
           mesh.position_y = currentMesh!.position.y;
           mesh.position_z = currentMesh!.position.z;
           mesh.rotation_y = currentMesh!.rotation.y;
-          console.log(mesh);
+          setData("meshes", dataList);
           return true;
         }
       });
     });
 
-    mesh_model.map((mesh) => mesh.addBehavior(pointerDragBehavior1));
-    return mesh_model;
+    mesh.addBehavior(pointerDragBehavior1);
+
+    return mesh;
   }
 
+  // Add buttons.
   function AddUIControl(scene: BABYLON.Scene) {
     const advancedTexture = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
     const addTableButton = GUI.Button.CreateSimpleButton(
@@ -161,8 +160,11 @@ export const StageView = (): JSX.Element => {
     addTableButton.fontSize = 12;
     addTableButton.top = "10px";
     addTableButton.left = "10px";
-    addTableButton.onPointerClickObservable.add(function () {
-      CreateMeshAsync(scene, "table", uuid(), 0, 0, 0, Math.PI);
+    addTableButton.onPointerClickObservable.add(() => {
+      var id = uuid();
+      CreateMeshAsync(scene, "table", id, 0, 0, 0, 0);
+      dataList.push(new MeshDataModel("table", id, 0, 0, 0, 0));
+      setData("meshes", dataList);
     });
 
     const addChiarButton = GUI.Button.CreateSimpleButton(
@@ -178,8 +180,11 @@ export const StageView = (): JSX.Element => {
     addChiarButton.fontSize = 12;
     addChiarButton.top = "30px";
     addChiarButton.left = "10px";
-    addChiarButton.onPointerClickObservable.add(function () {
-      CreateMeshAsync(scene, "chair", uuid(), 0, 0, 0, Math.PI);
+    addChiarButton.onPointerClickObservable.add(() => {
+      var id = uuid();
+      CreateMeshAsync(scene, "chair", id, 0, 0, 0, 0);
+      dataList.push(new MeshDataModel("chair", id, 0, 0, 0, 0));
+      setData("meshes", dataList);
     });
 
     removeButton = GUI.Button.CreateSimpleButton("removeButton", "Remove");
@@ -191,9 +196,16 @@ export const StageView = (): JSX.Element => {
     removeButton.background = "blue";
     removeButton.fontSize = 12;
     removeButton.isVisible = false;
-    removeButton.onPointerClickObservable.add(function () {
+    removeButton.onPointerClickObservable.add(() => {
       currentMesh?.dispose();
       removeButton.isVisible = false;
+      dataList.some((mesh: any, index: number) => {
+        if (mesh.name === currentMesh!.name) {
+          dataList.splice(index, 1);
+          setData("meshes", dataList);
+          return true;
+        }
+      });
     });
 
     advancedTexture.addControl(addTableButton);
@@ -204,11 +216,11 @@ export const StageView = (): JSX.Element => {
   // Setup mouse control behaviors when selecting a mesh or ground.
   function SetupPointerBehavior(scene: BABYLON.Scene) {
     var startingPoint: BABYLON.Nullable<BABYLON.Vector3>;
-    var getGroundPosition = function () {
+    var getGroundPosition = () => {
       var pickinfo = scene.pick(
         scene.pointerX,
         scene.pointerY,
-        function (mesh) {
+        (mesh) => {
           return mesh === ground;
         }
       );
@@ -220,9 +232,9 @@ export const StageView = (): JSX.Element => {
     };
 
     // When selecitng a mesh.
-    var pointerDownOnMesh = function (
+    var pointerDownOnMesh = (
       mesh: BABYLON.Nullable<BABYLON.AbstractMesh>
-    ) {
+    ) => {
       hl.removeAllMeshes();
       hl.addMesh(mesh as BABYLON.Mesh, BABYLON.Color3.Green());
       currentMesh = mesh;
@@ -232,14 +244,14 @@ export const StageView = (): JSX.Element => {
       removeButton.isVisible = true;
       startingPoint = getGroundPosition();
       if (startingPoint) {
-        setTimeout(function () {
+        setTimeout(() => {
           camera.detachControl();
         }, 0);
       }
     };
 
     // When selecting the ground.
-    var pointerDownOnGround = function () {
+    var pointerDownOnGround = () => {
       hl.removeAllMeshes();
       currentMesh = null;
       camera.inputs.addMouseWheel();
@@ -247,7 +259,7 @@ export const StageView = (): JSX.Element => {
       removeButton.isVisible = false;
     };
 
-    var pointerUp = function () {
+    var pointerUp = () => {
       if (startingPoint) {
         camera.attachControl(canvas, true);
         startingPoint = null;
@@ -255,7 +267,7 @@ export const StageView = (): JSX.Element => {
       }
     };
 
-    var pointerMove = function () {
+    var pointerMove = () => {
       if (!startingPoint) {
         return;
       }
@@ -293,20 +305,41 @@ export const StageView = (): JSX.Element => {
 
   // Setup mouse wheel behavior for camera and the selected mesh.
   function SetupMouseWheelBehavior(scene: BABYLON.Scene) {
-    window.addEventListener("wheel", function (event) {
+    window.addEventListener("wheel", (event) => {
       if (currentMesh !== null) {
         camera.inputs.removeByType("ArcRotateCameraMouseWheelInput");
         var delta = Math.sign(event.deltaY);
         //currentMesh.rotation.y += delta * 0.1;
+        currentMesh.reIntegrateRotationIntoRotationQuaternion = true;
         (currentMesh as BABYLON.Mesh).rotate(
           BABYLON.Axis.Y,
           delta * 0.1,
           BABYLON.Space.WORLD
         );
+        // rotationQuaternion is by default for glb
+        currentMesh.rotation = currentMesh.rotationQuaternion!.toEulerAngles();
+        dataList.some((mesh: any) => {
+          if (mesh.name === currentMesh!.name) {
+            mesh.position_x = currentMesh!.position.x;
+            mesh.position_y = currentMesh!.position.y;
+            mesh.position_z = currentMesh!.position.z;
+            mesh.rotation_y = currentMesh!.rotation.y;
+            setData("meshes", dataList);
+            return true;
+          }
+        });
       } else {
         camera.wheelPrecision = 50;
       }
     });
+  }
+
+  function setData(key: string, dataList: MeshDataModel[]){
+    localStorage.setItem(key, JSON.stringify(dataList));
+  }
+
+  function getData(key: string) : string | null{
+    return localStorage.getItem(key);
   }
 
   return (
