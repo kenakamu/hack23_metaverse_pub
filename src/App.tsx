@@ -3,94 +3,87 @@ import { v4 as uuid } from "uuid";
 import "./App.css";
 import { MeshDataModel } from "./MeshDataModel";
 import * as GUI from "@babylonjs/gui/2D";
-import {
-  Axis,
-  Space,
-  Nullable,
-  ArcRotateCamera,
-  PointerEventTypes,
-  PointerInfo,
-  FreeCamera,
-  SceneLoader,
-  Vector3,
-  HemisphericLight,
-  MeshBuilder,
-  Scene,
-  Mesh,
-  Color3,
-  PointerDragBehavior,
-  AbstractMesh,
-  GroundMesh,
-  HighlightLayer,
-} from "@babylonjs/core";
+import * as BABYLON from "@babylonjs/core";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
-import SceneComponent from "babylonjs-hook"; // if you install 'babylonjs-hook' NPM.
+import SceneComponent from "babylonjs-hook";
 import "./App.css";
-import * as tables from "./data/meshes.json";
+import * as meshesData from "./data/meshes.json";
+import { TinyliciousClient } from "@fluidframework/tinylicious-client";
+import { SharedMap } from "fluid-framework";
+
+const client = new TinyliciousClient();
+const containerSchema = {
+	initialObjects: { myMap: SharedMap },
+};
+const timeKey = "time-key";
+const getMyMap = async () => {
+	let container;
+	if (location.hash.length === 0) {
+		({ container } = await client.createContainer(containerSchema));
+		container.initialObjects.myMap.set(timeKey, Date.now().toString());
+		const id = await container.attach();
+		location.hash = id;
+	} else {
+		const id = location.hash.substring(1);
+		({ container } = await client.getContainer(id, containerSchema));
+	}
+	return container.initialObjects.myMap;
+};
 
 const dataList: MeshDataModel[] = [];
-let ground: GroundMesh;
-let currentMesh: Nullable<AbstractMesh> = null;
-let camera: ArcRotateCamera;
-let hl: HighlightLayer;
-let canvas: Nullable<HTMLCanvasElement>;
+let ground: BABYLON.GroundMesh;
+let currentMesh: BABYLON.Nullable<BABYLON.AbstractMesh> = null;
+let camera: BABYLON.ArcRotateCamera;
+let hl: BABYLON.HighlightLayer;
+let canvas: BABYLON.Nullable<HTMLCanvasElement>;
+let removeButton: GUI.Button;
 
-const onSceneReady = (scene: Scene) => {
-  hl = new HighlightLayer("hl1", scene);
-  // This creates and positions a free camera (non-mesh)
-  camera = new ArcRotateCamera(
+const onSceneReady = (scene: BABYLON.Scene) => {
+  console.log(Math.PI);
+  // Create Highlight Layer to show which mesh is selected
+  hl = new BABYLON.HighlightLayer("hl1", scene);
+  camera = new BABYLON.ArcRotateCamera(
     "camera1",
     0,
     0,
     0,
-    new Vector3(0, 5, -20),
+    new BABYLON.Vector3(0, 5, -20),
     scene
   );
   camera.wheelPrecision = 50;
-  // This targets the camera to scene origin
-  camera.setTarget(Vector3.Zero());
-
+  camera.setTarget(BABYLON.Vector3.Zero());
   canvas = scene.getEngine().getRenderingCanvas();
-
-  // This attaches the camera to the canvas
   camera.attachControl(canvas, true);
 
-  // read the initial data if not read yet.
+  // load the initial data if not yet.
+  // meshesData will be retrieved from Cosmos DB
   if (dataList.length === 0) {
-    for (let table of Array.from(tables)) {
+    for (let mesh of Array.from(meshesData)) {
       dataList.push(
         new MeshDataModel(
-          table.type,
-          table.name,
-          table.position_x,
-          table.position_y,
-          table.position_z,
-          table.rotation_y
+          mesh.type,
+          mesh.name,
+          mesh.position_x,
+          mesh.position_y,
+          mesh.position_z,
+          mesh.rotation_y
         )
       );
     }
   }
-  // This creates a light, aiming 0,1,0 - to the sky (non-mesh)
-  const light = new HemisphericLight("light", new Vector3(0, 1, 0), scene);
-  // Default intensity is 1. Let's dim the light a small amount
+  const light = new BABYLON.HemisphericLight(
+    "light",
+    new BABYLON.Vector3(0, 1, 0),
+    scene
+  );
   light.intensity = 0.7;
-
-  ground = MeshBuilder.CreateGround("ground", { width: 20, height: 20 }, scene);
-  LoadMeshAsync(scene);
-  AddUIControl(scene);
-  SetupPointerBehavior(scene);
-  SetupMouseWheelBehavior(scene);
-};
-
-const onRender = (scene: Scene) => {
-  // if (box1 !== undefined) {
-  //   const deltaTimeInMillis = scene.getEngine().getDeltaTime();
-  //   const rpm = 10;
-  //   box1.rotation.y += (rpm / 60) * Math.PI * 2 * (deltaTimeInMillis / 1000);
-  // }
-};
-
-function LoadMeshAsync(scene: Scene) {
+  ground = BABYLON.MeshBuilder.CreateGround(
+    "ground",
+    { width: 20, height: 20 },
+    scene
+  );
+  
+  // Load the meshes to the scene
   dataList.map((data: MeshDataModel) => {
     CreateMeshAsync(
       scene,
@@ -103,10 +96,20 @@ function LoadMeshAsync(scene: Scene) {
     );
     return true;
   });
-}
 
+  // Adding buttons to the scene
+  AddUIControl(scene);
+  // Setup mouse control behaviors
+  SetupPointerBehavior(scene);
+  SetupMouseWheelBehavior(scene);
+};
+
+const onRender = (scene: BABYLON.Scene) => {
+};
+
+// Create a mesh from the glb file and the inital values
 async function CreateMeshAsync(
-  scene: Scene,
+  scene: BABYLON.Scene,
   type: string,
   name: string,
   position_x: number,
@@ -115,7 +118,7 @@ async function CreateMeshAsync(
   rotation_y: number
 ) {
   let mesh_model = (
-    await SceneLoader.ImportMeshAsync(
+    await BABYLON.SceneLoader.ImportMeshAsync(
       "",
       "https://raw.githubusercontent.com/kenakamu/hack23_metaverse_pub/main/src/data/",
       `${type}.glb`,
@@ -123,31 +126,47 @@ async function CreateMeshAsync(
       function (meshes) {}
     )
   ).meshes;
-  mesh_model.map((mesh) => (mesh.scaling = new Vector3(2, 2, 2)));
-  mesh_model.map((mesh) => (mesh.rotation.y = -Math.PI));
+  mesh_model.map((mesh) => (mesh.scaling = new BABYLON.Vector3(2, 2, 2)));
+  mesh_model.map((mesh) => (mesh.rotation.y = rotation_y));
   mesh_model.map(
-    (mesh) => (mesh.position = new Vector3(position_x, position_y, position_z))
+    (mesh) =>
+      (mesh.position = new BABYLON.Vector3(position_x, position_y, position_z))
   );
+
   mesh_model.map((mesh) => (mesh.name = name));
 
-  var pointerDragBehavior1 = new PointerDragBehavior({
-    dragPlaneNormal: new Vector3(0, 1, 0),
+  var pointerDragBehavior1 = new BABYLON.PointerDragBehavior({
+    dragPlaneNormal: new BABYLON.Vector3(0, 1, 0),
   });
   pointerDragBehavior1.onDragStartObservable.add((event) => {
-    console.log("dragStart");
+    //console.log("dragStart");
   });
   pointerDragBehavior1.onDragObservable.add((event) => {
-    console.log("drag");
+    //console.log("drag");
   });
   pointerDragBehavior1.onDragEndObservable.add((event) => {
-    console.log("dragEnd");
+    //console.log("dragEnd");
+    //console.log(event);
+    Array.from(meshesData).some(function (mesh) {
+      console.log("found ", currentMesh!.name, " ", mesh.name);
+      if (mesh.name === currentMesh!.name) {
+        mesh.position_x = currentMesh!.position.x;
+        mesh.position_y = currentMesh!.position.y;
+        mesh.position_z = currentMesh!.position.z;
+        mesh.rotation_y = currentMesh!.rotation.y;
+        console.log(mesh);
+        return true; 
+      }
+    });
+    console.log(currentMesh);
+    console.log(meshesData);
   });
-  mesh_model.map((mesh) => mesh.addBehavior(pointerDragBehavior1));
 
+  mesh_model.map((mesh) => mesh.addBehavior(pointerDragBehavior1));
   return mesh_model;
 }
 
-function AddUIControl(scene: Scene) {
+function AddUIControl(scene: BABYLON.Scene) {
   const advancedTexture = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
   const addTableButton = GUI.Button.CreateSimpleButton(
     "addTableButton",
@@ -183,19 +202,18 @@ function AddUIControl(scene: Scene) {
     CreateMeshAsync(scene, "chair", uuid(), 0, 0, 0, -Math.PI);
   });
 
-  const removeButton = GUI.Button.CreateSimpleButton("removeButton", "Remove");
-
-  removeButton.width = "100px";
+  removeButton = GUI.Button.CreateSimpleButton("removeButton", "Remove");
+  removeButton.width = "50px";
   removeButton.height = "20px";
   removeButton.horizontalAlignment = GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
   removeButton.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_TOP;
   removeButton.color = "white";
   removeButton.background = "blue";
   removeButton.fontSize = 12;
-  removeButton.top = "50px";
-  removeButton.left = "10px";
+  removeButton.isVisible = false;
   removeButton.onPointerClickObservable.add(function () {
     currentMesh?.dispose();
+    removeButton.isVisible = false;
   });
 
   advancedTexture.addControl(addTableButton);
@@ -203,8 +221,9 @@ function AddUIControl(scene: Scene) {
   advancedTexture.addControl(removeButton);
 }
 
-function SetupPointerBehavior(scene: Scene) {
-  var startingPoint: Nullable<Vector3>;
+// Setup mouse control behaviors when selecting a mesh or ground.
+function SetupPointerBehavior(scene: BABYLON.Scene) {
+  var startingPoint: BABYLON.Nullable<BABYLON.Vector3>;
   var getGroundPosition = function () {
     var pickinfo = scene.pick(scene.pointerX, scene.pointerY, function (mesh) {
       return mesh === ground;
@@ -216,10 +235,17 @@ function SetupPointerBehavior(scene: Scene) {
     return null;
   };
 
-  var pointerDownOnMesh = function (mesh: Nullable<AbstractMesh>) {
+  // When selecitng a mesh.
+  var pointerDownOnMesh = function (
+    mesh: BABYLON.Nullable<BABYLON.AbstractMesh>
+  ) {
     hl.removeAllMeshes();
-    hl.addMesh(mesh as Mesh, Color3.Green());
+    hl.addMesh(mesh as BABYLON.Mesh, BABYLON.Color3.Green());
     currentMesh = mesh;
+    removeButton.linkWithMesh(currentMesh as BABYLON.Mesh);
+    removeButton.linkOffsetX = 50;
+    removeButton.linkOffsetY = -20;
+    removeButton.isVisible = true;
     console.log(currentMesh!.name);
     startingPoint = getGroundPosition();
     if (startingPoint) {
@@ -229,10 +255,13 @@ function SetupPointerBehavior(scene: Scene) {
     }
   };
 
+  // When selecting the ground.
   var pointerDownOnGround = function () {
     hl.removeAllMeshes();
     currentMesh = null;
     camera.inputs.addMouseWheel();
+    removeButton.linkWithMesh(null);
+    removeButton.isVisible = false;
   };
 
   var pointerUp = function () {
@@ -254,13 +283,12 @@ function SetupPointerBehavior(scene: Scene) {
 
     var diff = current.subtract(startingPoint);
     currentMesh!.position.addInPlace(diff);
-
     startingPoint = current;
   };
 
-  scene.onPointerObservable.add((pointerInfo: PointerInfo) => {
+  scene.onPointerObservable.add((pointerInfo: BABYLON.PointerInfo) => {
     switch (pointerInfo.type) {
-      case PointerEventTypes.POINTERDOWN:
+      case BABYLON.PointerEventTypes.POINTERDOWN:
         if (
           pointerInfo.pickInfo!.hit &&
           pointerInfo.pickInfo!.pickedMesh !== ground
@@ -270,22 +298,28 @@ function SetupPointerBehavior(scene: Scene) {
           pointerDownOnGround();
         }
         break;
-      case PointerEventTypes.POINTERUP:
+      case BABYLON.PointerEventTypes.POINTERUP:
         pointerUp();
         break;
-      case PointerEventTypes.POINTERMOVE:
+      case BABYLON.PointerEventTypes.POINTERMOVE:
         pointerMove();
         break;
     }
   });
 }
 
-function SetupMouseWheelBehavior(scene: Scene) {
+// Setup mouse wheel behavior for camera and the selected mesh.
+function SetupMouseWheelBehavior(scene: BABYLON.Scene) {
   window.addEventListener("wheel", function (event) {
     if (currentMesh !== null) {
       camera.inputs.removeByType("ArcRotateCameraMouseWheelInput");
       var delta = Math.sign(event.deltaY);
-      (currentMesh as Mesh).rotate(Axis.Y, delta * 0.1, Space.WORLD);
+      //currentMesh.rotation.y += delta * 0.1;
+      (currentMesh as BABYLON.Mesh).rotate(
+        BABYLON.Axis.Y,
+        delta * 0.1,
+        BABYLON.Space.WORLD
+      );
     } else {
       camera.wheelPrecision = 50;
     }
