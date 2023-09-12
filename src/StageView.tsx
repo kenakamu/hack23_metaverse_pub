@@ -8,8 +8,12 @@ import "@babylonjs/loaders/glTF/2.0/glTFLoader";
 import SceneComponent from "babylonjs-hook";
 import "./App.css";
 import * as meshesData from "./data/meshes.json";
+import { useSharedMap } from "@microsoft/live-share-react";
+
+export const EXAMPLE_SHARED_MAP_KEY = "CUSTOM-CARDS-MAP";
 
 export const StageView = (): JSX.Element => {
+  const { map, setEntry, deleteEntry } = useSharedMap(EXAMPLE_SHARED_MAP_KEY);
   const dataList: MeshDataModel[] = [];
   let ground: BABYLON.GroundMesh;
   let currentMesh: BABYLON.Nullable<BABYLON.AbstractMesh> = null;
@@ -123,8 +127,7 @@ export const StageView = (): JSX.Element => {
       //console.log("dragStart");
     });
     pointerDragBehavior1.onDragObservable.add((event) => {
-      console.log("drag");
-      console.log(currentMesh);
+      setEntry(currentMesh!.name, currentMesh);
     });
     pointerDragBehavior1.onDragEndObservable.add((event) => {
       //console.log("dragEnd");

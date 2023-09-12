@@ -7,6 +7,7 @@ import { app, meeting } from "@microsoft/teams-js";
 import { useEffect } from "react";
 
 export const SideBarView = () => {
+  console.log("made it");
   useEffect(() => {
     app.initialize();
     app.notifySuccess();

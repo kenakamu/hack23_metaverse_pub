@@ -8,13 +8,12 @@ function App() {
   const params = new URLSearchParams(window.location.search);
   const viewParam = params.get("view") ?? "";
   console.log(viewParam);
-  let view;
 
   switch (viewParam.toLowerCase()) {
-    case "config":
+    case "sideBar":
       return (
         <div>
-          <ConfigView />
+          <SideBarView />
         </div>
       );
     case "stage":
@@ -26,7 +25,7 @@ function App() {
     default:
       return (
         <div>
-          <SideBarView />
+          <ConfigView />
         </div>
       );
       break;

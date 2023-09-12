@@ -5,8 +5,10 @@
 
 import { useEffect } from "react";
 import { app, pages } from "@microsoft/teams-js";
+// import { useNavigate } from "react-router-dom";
 
 export const ConfigView = () => {
+  // const navigate = useNavigate();
   useEffect(() => {
     app.initialize().then(() => {
       pages.config.registerOnSaveHandler(onSavePagesConfig);
