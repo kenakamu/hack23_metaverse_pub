@@ -8,27 +8,6 @@ import "@babylonjs/loaders/glTF/2.0/glTFLoader";
 import SceneComponent from "babylonjs-hook";
 import "./App.css";
 import * as meshesData from "./data/meshes.json";
-import { TinyliciousClient } from "@fluidframework/tinylicious-client";
-import { SharedMap } from "fluid-framework";
-
-const client = new TinyliciousClient();
-const containerSchema = {
-	initialObjects: { myMap: SharedMap },
-};
-const timeKey = "time-key";
-const getMyMap = async () => {
-	let container;
-	if (location.hash.length === 0) {
-		({ container } = await client.createContainer(containerSchema));
-		container.initialObjects.myMap.set(timeKey, Date.now().toString());
-		const id = await container.attach();
-		location.hash = id;
-	} else {
-		const id = location.hash.substring(1);
-		({ container } = await client.getContainer(id, containerSchema));
-	}
-	return container.initialObjects.myMap;
-};
 
 const dataList: MeshDataModel[] = [];
 let ground: BABYLON.GroundMesh;
@@ -39,7 +18,6 @@ let canvas: BABYLON.Nullable<HTMLCanvasElement>;
 let removeButton: GUI.Button;
 
 const onSceneReady = (scene: BABYLON.Scene) => {
-  console.log(Math.PI);
   // Create Highlight Layer to show which mesh is selected
   hl = new BABYLON.HighlightLayer("hl1", scene);
   camera = new BABYLON.ArcRotateCamera(
@@ -142,7 +120,8 @@ async function CreateMeshAsync(
     //console.log("dragStart");
   });
   pointerDragBehavior1.onDragObservable.add((event) => {
-    //console.log("drag");
+    console.log("drag");
+    console.log(currentMesh);
   });
   pointerDragBehavior1.onDragEndObservable.add((event) => {
     //console.log("dragEnd");
@@ -158,8 +137,6 @@ async function CreateMeshAsync(
         return true; 
       }
     });
-    console.log(currentMesh);
-    console.log(meshesData);
   });
 
   mesh_model.map((mesh) => mesh.addBehavior(pointerDragBehavior1));
@@ -182,7 +159,7 @@ function AddUIControl(scene: BABYLON.Scene) {
   addTableButton.top = "10px";
   addTableButton.left = "10px";
   addTableButton.onPointerClickObservable.add(function () {
-    CreateMeshAsync(scene, "table", uuid(), 0, 0, 0, -Math.PI);
+    CreateMeshAsync(scene, "table", uuid(), 0, 0, 0, Math.PI);
   });
 
   const addChiarButton = GUI.Button.CreateSimpleButton(
@@ -199,7 +176,7 @@ function AddUIControl(scene: BABYLON.Scene) {
   addChiarButton.top = "30px";
   addChiarButton.left = "10px";
   addChiarButton.onPointerClickObservable.add(function () {
-    CreateMeshAsync(scene, "chair", uuid(), 0, 0, 0, -Math.PI);
+    CreateMeshAsync(scene, "chair", uuid(), 0, 0, 0, Math.PI);
   });
 
   removeButton = GUI.Button.CreateSimpleButton("removeButton", "Remove");
@@ -246,7 +223,6 @@ function SetupPointerBehavior(scene: BABYLON.Scene) {
     removeButton.linkOffsetX = 50;
     removeButton.linkOffsetY = -20;
     removeButton.isVisible = true;
-    console.log(currentMesh!.name);
     startingPoint = getGroundPosition();
     if (startingPoint) {
       setTimeout(function () {
