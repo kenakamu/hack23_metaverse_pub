@@ -1,4 +1,4 @@
-export class MeshDataModel {
+export class MeshData {
   constructor(
     public name: string,
     public type: string,
