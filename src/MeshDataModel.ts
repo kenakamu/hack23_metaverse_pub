@@ -20,4 +20,5 @@ export class MeshDataModel {
   position_y: number;
   position_z: number;
   rotation_y: number;
+  memo:string = "";
 }

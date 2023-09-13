@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { v4 as uuid } from "uuid";
 import "./App.css";
 import { MeshDataModel } from "./MeshDataModel";
@@ -18,6 +18,7 @@ export const StageView = (): JSX.Element => {
   let hl: BABYLON.HighlightLayer;
   let canvas: BABYLON.Nullable<HTMLCanvasElement>;
   let removeButton: GUI.Button;
+  let memoInput: GUI.InputText;
   let meshesData: any = [];
   const onSceneReady = (scene: BABYLON.Scene) => {
     //Inspector.Show(scene, {});
@@ -208,9 +209,32 @@ export const StageView = (): JSX.Element => {
       });
     });
 
+    memoInput = new GUI.InputTextArea();
+    memoInput.width = "200px";
+    memoInput.height = "80%";
+    memoInput.isVisible = false;
+    memoInput.background = "lightgray";
+    memoInput.focusedBackground = "white";
+    memoInput.color = "black";
+    memoInput.onTextChangedObservable.add((value) => {
+    });
+    memoInput.onBlurObservable.add((value) => {
+      dataList.some((mesh: any) => {
+        if (mesh.name === currentMesh!.name) {
+          mesh.position_x = currentMesh!.position.x;
+          mesh.position_y = currentMesh!.position.y;
+          mesh.position_z = currentMesh!.position.z;
+          mesh.rotation_y = currentMesh!.rotation.y;
+          mesh.memo = value.text;
+          setData("meshes", dataList);
+          return true;
+        }
+      });
+    });
     advancedTexture.addControl(addTableButton);
     advancedTexture.addControl(addChiarButton);
     advancedTexture.addControl(removeButton);
+    advancedTexture.addControl(memoInput);
   }
 
   // Setup mouse control behaviors when selecting a mesh or ground.
@@ -242,6 +266,10 @@ export const StageView = (): JSX.Element => {
       removeButton.linkOffsetX = 50;
       removeButton.linkOffsetY = -20;
       removeButton.isVisible = true;
+      memoInput.linkWithMesh(currentMesh as BABYLON.Mesh);
+      memoInput.linkOffsetX = 150;
+      memoInput.linkOffsetY = -100;
+      memoInput.isVisible = true;
       startingPoint = getGroundPosition();
       if (startingPoint) {
         setTimeout(() => {
