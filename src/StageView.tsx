@@ -2,6 +2,10 @@ import React from "react";
 import { v4 as uuid } from "uuid";
 import "./App.css";
 import { MeshDataModel } from "./MeshDataModel";
+import {
+  LiveShareProvider,
+  useLiveShareContext,
+} from "@microsoft/live-share-react";
 import * as GUI from "@babylonjs/gui/2D";
 import * as BABYLON from "@babylonjs/core";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
@@ -9,11 +13,17 @@ import SceneComponent from "babylonjs-hook";
 import "./App.css";
 import * as meshesData from "./data/meshes.json";
 import { useSharedMap } from "@microsoft/live-share-react";
-
+import { LiveShareHost } from "@microsoft/teams-js";
+import { useState } from "react";
+import { LiveShareClient, LiveState } from "@microsoft/live-share";
+import { ContainerSchema, SharedMap } from "fluid-framework";
+import { useEffect } from "react";
 export const EXAMPLE_SHARED_MAP_KEY = "CUSTOM-CARDS-MAP";
 
 export const StageView = (): JSX.Element => {
-  const { map, setEntry, deleteEntry } = useSharedMap(EXAMPLE_SHARED_MAP_KEY);
+  const { joined } = useLiveShareContext();
+  const obj = useSharedMap<any>(EXAMPLE_SHARED_MAP_KEY, { test: "data" });
+  console.log(obj);
   const dataList: MeshDataModel[] = [];
   let ground: BABYLON.GroundMesh;
   let currentMesh: BABYLON.Nullable<BABYLON.AbstractMesh> = null;
@@ -127,7 +137,7 @@ export const StageView = (): JSX.Element => {
       //console.log("dragStart");
     });
     pointerDragBehavior1.onDragObservable.add((event) => {
-      setEntry(currentMesh!.name, currentMesh);
+      obj.setEntry(currentMesh!.name, currentMesh);
     });
     pointerDragBehavior1.onDragEndObservable.add((event) => {
       //console.log("dragEnd");
@@ -311,16 +321,19 @@ export const StageView = (): JSX.Element => {
       }
     });
   }
-
-  return (
-    <div className="App">
-      <h3>Babylon Sample</h3>
-      <SceneComponent
-        antialias
-        onSceneReady={onSceneReady}
-        onRender={onRender}
-        id="my-canvas"
-      />
-    </div>
-  );
+  if (!joined) {
+    return <p>{"Loading..."}</p>;
+  } else {
+    return (
+      <div className="App">
+        <h3>Babylon Sample</h3>
+        <SceneComponent
+          antialias
+          onSceneReady={onSceneReady}
+          onRender={onRender}
+          id="my-canvas"
+        />
+      </div>
+    );
+  }
 };

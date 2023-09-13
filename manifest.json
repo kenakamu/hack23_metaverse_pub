@@ -29,7 +29,7 @@
       "configurationUrl": "https://bbda-2001-4898-80e8-36-865a-af01-bf45-3750.ngrok-free.app/?view=config&inTeams=1",
       "canUpdateConfiguration": false,
       "scopes": ["groupchat"],
-      "context": ["meetingSidePanel", "meetingStage"]
+      "context": ["meetingSidePanel", "meetingStage", "sidePanel"]
     }
   ],
   "validDomains": ["*.ngrok.io", "*.ngrok-free.app"],
