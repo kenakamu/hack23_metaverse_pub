@@ -46,12 +46,12 @@ export const StageView = (): JSX.Element => {
       for (let mesh of meshesData) {
         dataList.push(
           new MeshDataModel(
-            mesh.type,
             mesh.name,
-            mesh.position_x,
-            mesh.position_y,
-            mesh.position_z,
-            mesh.rotation_y
+            mesh.type,
+            mesh.position,
+            mesh.scale,
+            mesh.rotation,
+            mesh.memo
           )
         );
       }
@@ -72,12 +72,7 @@ export const StageView = (): JSX.Element => {
     dataList.map((data: MeshDataModel) => {
       CreateMeshAsync(
         scene,
-        data.type,
-        data.name,
-        data.position_x,
-        data.position_y,
-        data.position_z,
-        data.rotation_y
+        data
       );
       return true;
     });
@@ -91,15 +86,10 @@ export const StageView = (): JSX.Element => {
 
   const onRender = (scene: BABYLON.Scene) => {};
 
-  // Create a mesh from the glb file and the inital values
+  // Create a mesh from the glb file and the initial values
   async function CreateMeshAsync(
     scene: BABYLON.Scene,
-    type: string,
-    name: string,
-    position_x: number,
-    position_y: number,
-    position_z: number,
-    rotation_y: number
+    data: MeshDataModel
   ) {
     // Getting the mesh from the glb file and take the second mesh as it's model.
     // This may vary depending on the model types.
@@ -107,16 +97,16 @@ export const StageView = (): JSX.Element => {
       await BABYLON.SceneLoader.ImportMeshAsync(
         "",
         "https://raw.githubusercontent.com/kenakamu/hack23_metaverse_pub/main/src/data/",
-        `${type}.glb`,
+        `${data.type}.glb`,
         scene,
         (meshes) => {}
       )
     ).meshes[1];
     mesh.parent = null;
-    mesh.scaling = new BABYLON.Vector3(2, 2, 2);
-    mesh.rotate(BABYLON.Axis.Y, rotation_y, BABYLON.Space.WORLD);
-    mesh.position = new BABYLON.Vector3(position_x, position_y, position_z);
-    mesh.name = name;
+    mesh.scaling = new BABYLON.Vector3(data.scale.x, data.scale.y, data.scale.z);
+    mesh.rotate(BABYLON.Axis.Y, data.rotation.y, BABYLON.Space.WORLD);
+    mesh.position = new BABYLON.Vector3(data.position.x, data.position.y, data.position.z);
+    mesh.name = data.name;
 
     var pointerDragBehavior1 = new BABYLON.PointerDragBehavior({
       dragPlaneNormal: new BABYLON.Vector3(0, 1, 0),
@@ -129,10 +119,10 @@ export const StageView = (): JSX.Element => {
       // When the drag ends, we save it's location.
       dataList.some((mesh: any) => {
         if (mesh.name === currentMesh!.name) {
-          mesh.position_x = currentMesh!.position.x;
-          mesh.position_y = currentMesh!.position.y;
-          mesh.position_z = currentMesh!.position.z;
-          mesh.rotation_y = currentMesh!.rotation.y;
+          mesh.position.x = currentMesh!.position.x;
+          mesh.position.y = currentMesh!.position.y;
+          mesh.position.z = currentMesh!.position.z;
+          mesh.rotation.y = currentMesh!.rotation.y;
           setData("meshes", dataList);
           return true;
         }
@@ -161,9 +151,18 @@ export const StageView = (): JSX.Element => {
     addTableButton.top = "10px";
     addTableButton.left = "10px";
     addTableButton.onPointerClickObservable.add(() => {
-      var id = uuid();
-      CreateMeshAsync(scene, "table", id, 0, 0, 0, 0);
-      dataList.push(new MeshDataModel("table", id, 0, 0, 0, 0));
+      var name = uuid();
+      var newMesh = new MeshDataModel(
+                    name,
+                    "table",
+                    { x: 0, y: 0, z: 0 },    // position
+                    { x: 2, y: 2, z: 2 },    // scale
+                    { x: 0, y: 0, z: 0 },    // rotation
+                    "This is table-" + name
+                  );
+
+      CreateMeshAsync(scene, newMesh);
+      dataList.push(newMesh);
       setData("meshes", dataList);
     });
 
@@ -181,9 +180,18 @@ export const StageView = (): JSX.Element => {
     addChiarButton.top = "30px";
     addChiarButton.left = "10px";
     addChiarButton.onPointerClickObservable.add(() => {
-      var id = uuid();
-      CreateMeshAsync(scene, "chair", id, 0, 0, 0, 0);
-      dataList.push(new MeshDataModel("chair", id, 0, 0, 0, 0));
+      var name = uuid();
+      var newMesh = new MeshDataModel(
+                    name,
+                    "chair",
+                    { x: 0, y: 0, z: 0 },    // position
+                    { x: 2, y: 2, z: 2 },    // scale
+                    { x: 0, y: 0, z: 0 },    // rotation
+                    "This is chair-" + name
+                  );
+
+      CreateMeshAsync(scene, newMesh);
+      dataList.push(newMesh);
       setData("meshes", dataList);
     });
 
@@ -231,7 +239,7 @@ export const StageView = (): JSX.Element => {
       return null;
     };
 
-    // When selecitng a mesh.
+    // When selecting a mesh.
     var pointerDownOnMesh = (
       mesh: BABYLON.Nullable<BABYLON.AbstractMesh>
     ) => {
@@ -320,10 +328,10 @@ export const StageView = (): JSX.Element => {
         currentMesh.rotation = currentMesh.rotationQuaternion!.toEulerAngles();
         dataList.some((mesh: any) => {
           if (mesh.name === currentMesh!.name) {
-            mesh.position_x = currentMesh!.position.x;
-            mesh.position_y = currentMesh!.position.y;
-            mesh.position_z = currentMesh!.position.z;
-            mesh.rotation_y = currentMesh!.rotation.y;
+            mesh.position.x = currentMesh!.position.x;
+            mesh.position.y = currentMesh!.position.y;
+            mesh.position.z = currentMesh!.position.z;
+            mesh.rotation.y = currentMesh!.rotation.y;
             setData("meshes", dataList);
             return true;
           }
