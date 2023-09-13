@@ -1,14 +1,13 @@
 import React from "react";
 import "./App.css";
-import { StageView } from "./StageView";
-import { SideBarView } from "./SidebarView";
-import { ConfigView } from "./ConfigView";
+import { StageView } from "./views/StageView";
+import { SideBarView } from "./views/SidebarView";
+import { ConfigView } from "./views/ConfigView";
 
 function App() {
   const params = new URLSearchParams(window.location.search);
   const viewParam = params.get("view") ?? "";
   console.log(viewParam);
-  let view;
 
   switch (viewParam.toLowerCase()) {
     case "config":
@@ -29,7 +28,6 @@ function App() {
           <SideBarView />
         </div>
       );
-      break;
   }
 }
 
