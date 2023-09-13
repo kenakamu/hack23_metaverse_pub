@@ -19,15 +19,14 @@ import { LiveShareHost, app } from "@microsoft/teams-js";
 import { useEffect, useState } from "react";
 import { IFluidContainer, SharedMap, SharedString } from "fluid-framework";
 import { LiveCanvas } from "@microsoft/live-share-canvas";
-import { AzureClient, AzureClientProps } from "@fluidframework/azure-client";
+import { AzureClient } from "@fluidframework/azure-client";
 
 //import { Inspector } from "@babylonjs/inspector";
 
 // ... YOUR SCENE CREATION
 export const StageView = (): JSX.Element => {
-  const [obj, setObj] = useState<SharedMap>();
   const [container, setContainer] = useState<IFluidContainer>();
-  const [fluidClient, setFluidClient] = useState<AzureClient>();
+  const [fluidClient] = useState<AzureClient>();
 
   const containerSchema = {
     initialObjects: {
@@ -168,31 +167,18 @@ export const StageView = (): JSX.Element => {
       dragPlaneNormal: new BABYLON.Vector3(0, 1, 0),
     });
     pointerDragBehavior.onDragStartObservable.add((event) => {});
-    const camera = container!.initialObjects.objRotateY as SharedMap;
-    camera.on("valueChanged", (changed) => {
-      console.log(changed);
+    const meshMoveSharedMap = container!.initialObjects.objRotateY as SharedMap;
+    meshMoveSharedMap.on("valueChanged", (changed) => {
+      console.log("valueChanged", changed);
     });
     pointerDragBehavior.onDragObservable.add((event) => {
-      console.log(event);
-      console.log(currentMesh!.id);
-      if (camera != null && currentMesh != null) {
-        camera.set(currentMesh!.id, {
-          x: event.delta._x,
-          y: event.delta._y,
-          z: event.delta._z,
-        });
-        const copyMeshData = [...meshDataList];
-        copyMeshData.some((mesh: MeshData) => {
-          if (mesh.name === currentMesh!.name) {
-            mesh.position.x = event.delta._x;
-            mesh.position.y = event.delta._y;
-            mesh.position.z = event.delta._z;
-          }
-        });
-        camera.set("1", copyMeshData);
-        console.log(camera);
-        setObj(camera);
-      }
+      // if (camera != null && currentMesh != null) {
+      //   camera.set(currentMesh!.id, {
+      //     x: event.delta._x,
+      //     y: event.delta._y,
+      //     z: event.delta._z,
+      //   });
+      // }
     });
     pointerDragBehavior.onDragEndObservable.add((event) => {
       // When the drag ends, we save it's location.
@@ -205,13 +191,12 @@ export const StageView = (): JSX.Element => {
           return true;
         }
       });
+      meshMoveSharedMap.set(currentMesh!.name, {
+        x: currentMesh!.position.x,
+        z: currentMesh!.position.z,
+      });
     });
-    console.log(currentMesh);
-    if (currentMesh != null) {
-      camera.set(currentMesh!.id, currentMesh);
-      console.log(camera);
-      setObj(camera);
-    }
+
     mesh.addBehavior(pointerDragBehavior);
 
     return mesh;

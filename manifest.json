@@ -26,10 +26,10 @@
   "accentColor": "#FFFFFF",
   "configurableTabs": [
     {
-      "configurationUrl": "https://bbda-2001-4898-80e8-36-865a-af01-bf45-3750.ngrok-free.app/?view=config&inTeams=1",
+      "configurationUrl": "https://2232-2001-4898-80e8-9-32f7-4245-e083-6e29.ngrok-free.app?view=config&inTeams=1",
       "canUpdateConfiguration": false,
       "scopes": ["groupchat"],
-      "context": ["meetingSidePanel", "meetingStage", "sidePanel"]
+      "context": ["meetingSidePanel", "meetingStage"]
     }
   ],
   "validDomains": ["*.ngrok.io", "*.ngrok-free.app"],
