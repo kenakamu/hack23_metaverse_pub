@@ -117,16 +117,12 @@ export const StageView = (): JSX.Element => {
     console.log(container?.initialObjects.objRotateY as SharedMap);
     const items = container?.initialObjects.objRotateY as SharedMap;
     // load the initial data if not yet.
-    if (items.size > 0) {
-      meshDataList = container!.initialObjects
-        .objRotateY as unknown as MeshData[];
-    }
     if (meshDataList.length === 0) {
       meshDataList = repository.getData("meshes");
     }
 
     // Load the meshes to the scene
-    meshDataList.map((meshData: MeshData) => {
+    meshDataList?.map((meshData: MeshData) => {
       return CreateMeshAsync(scene, meshData);
     });
 
@@ -173,6 +169,9 @@ export const StageView = (): JSX.Element => {
     });
     pointerDragBehavior.onDragStartObservable.add((event) => {});
     const camera = container!.initialObjects.objRotateY as SharedMap;
+    camera.on("valueChanged", (changed) => {
+      console.log(changed);
+    });
     pointerDragBehavior.onDragObservable.add((event) => {
       console.log(event);
       console.log(currentMesh!.id);
@@ -506,7 +505,7 @@ export const StageView = (): JSX.Element => {
     <div className="App">
       {container ? (
         <div>
-          <h3>{obj?.entries()?.next?.toString()}</h3>
+          <h3>BabylonJS Demo</h3>
           <h4></h4>
           <SceneComponent
             antialias
