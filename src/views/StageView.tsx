@@ -24,18 +24,8 @@ import { AzureClient, AzureClientProps } from "@fluidframework/azure-client";
 //import { Inspector } from "@babylonjs/inspector";
 
 // ... YOUR SCENE CREATION
-export const inSecureClientOptions: ILiveShareClientOptions | any = {
-  connection: {
-    tenantId: "",
-    tokenProvider: new InsecureTokenProvider("", {
-      id: "123",
-    }),
-    endpoint: "",
-    type: "remote",
-  },
-};
 export const StageView = (): JSX.Element => {
-  const [client, setClient] = useState();
+  const [obj, setObj] = useState<SharedMap>();
   const [container, setContainer] = useState<IFluidContainer>();
   const [fluidClient, setFluidClient] = useState<AzureClient>();
 
@@ -124,8 +114,13 @@ export const StageView = (): JSX.Element => {
       { width: 20, height: 20 },
       scene
     );
-
+    console.log(container?.initialObjects.objRotateY as SharedMap);
+    const items = container?.initialObjects.objRotateY as SharedMap;
     // load the initial data if not yet.
+    if (items.size > 0) {
+      meshDataList = container!.initialObjects
+        .objRotateY as unknown as MeshData[];
+    }
     if (meshDataList.length === 0) {
       meshDataList = repository.getData("meshes");
     }
@@ -177,7 +172,29 @@ export const StageView = (): JSX.Element => {
       dragPlaneNormal: new BABYLON.Vector3(0, 1, 0),
     });
     pointerDragBehavior.onDragStartObservable.add((event) => {});
-    pointerDragBehavior.onDragObservable.add((event) => {});
+    const camera = container!.initialObjects.objRotateY as SharedMap;
+    pointerDragBehavior.onDragObservable.add((event) => {
+      console.log(event);
+      console.log(currentMesh!.id);
+      if (camera != null && currentMesh != null) {
+        camera.set(currentMesh!.id, {
+          x: event.delta._x,
+          y: event.delta._y,
+          z: event.delta._z,
+        });
+        const copyMeshData = [...meshDataList];
+        copyMeshData.some((mesh: MeshData) => {
+          if (mesh.name === currentMesh!.name) {
+            mesh.position.x = event.delta._x;
+            mesh.position.y = event.delta._y;
+            mesh.position.z = event.delta._z;
+          }
+        });
+        camera.set("1", copyMeshData);
+        console.log(camera);
+        setObj(camera);
+      }
+    });
     pointerDragBehavior.onDragEndObservable.add((event) => {
       // When the drag ends, we save it's location.
       meshDataList.some((mesh: MeshData) => {
@@ -190,6 +207,12 @@ export const StageView = (): JSX.Element => {
         }
       });
     });
+    console.log(currentMesh);
+    if (currentMesh != null) {
+      camera.set(currentMesh!.id, currentMesh);
+      console.log(camera);
+      setObj(camera);
+    }
     mesh.addBehavior(pointerDragBehavior);
 
     return mesh;
@@ -481,13 +504,20 @@ export const StageView = (): JSX.Element => {
 
   return (
     <div className="App">
-      <h3>Babylon Sample</h3>
-      <SceneComponent
-        antialias
-        onSceneReady={onSceneReady}
-        onRender={onRender}
-        id="my-canvas"
-      />
+      {container ? (
+        <div>
+          <h3>{obj?.entries()?.next?.toString()}</h3>
+          <h4></h4>
+          <SceneComponent
+            antialias
+            onSceneReady={onSceneReady}
+            onRender={onRender}
+            id="my-canvas"
+          />
+        </div>
+      ) : (
+        <div></div>
+      )}
     </div>
   );
 };
