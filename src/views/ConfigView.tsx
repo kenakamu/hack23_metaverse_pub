@@ -9,9 +9,15 @@ import { app, pages } from "@microsoft/teams-js";
 
 export const ConfigView = () => {
   useEffect(() => {
-    pages.config.registerOnSaveHandler(onSavePagesConfig);
-    pages.config.setValidityState(true);
-    app.notifySuccess();
+    const initApp = async () => {
+      await app.initialize();
+      app.notifySuccess();
+      console.log("config!!");
+    };
+    initApp().then((item) => {
+      pages.config.registerOnSaveHandler(onSavePagesConfig);
+      pages.config.setValidityState(true);
+    });
   }, []);
   const onSavePagesConfig = async (event: any) => {
     await pages.config.setConfig({

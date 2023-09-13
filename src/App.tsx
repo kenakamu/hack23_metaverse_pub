@@ -1,10 +1,12 @@
 import "./App.css";
-import { StageView } from "./StageView";
-import { SideBarView } from "./SidebarView";
-import { ConfigView } from "./ConfigView";
+import { StageView } from "./views/StageView";
+import { SideBarView } from "./views/SidebarView";
+import { ConfigView } from "./views/ConfigView";
 import { useRef, useState, useEffect } from "react";
 import { app } from "@microsoft/teams-js";
-import { StageViewWrapper } from "./StageViewWrapper";
+import { AzureClient, AzureClientProps } from "@fluidframework/azure-client";
+import { LiveCanvas } from "@microsoft/live-share-canvas";
+import { IFluidContainer, SharedMap, SharedString } from "fluid-framework";
 
 function App() {
   const initializeStartedRef = useRef(false);
@@ -34,30 +36,26 @@ function App() {
   });
   const params = new URLSearchParams(window.location.search);
   const viewParam = params.get("view") ?? "";
-  if (initialized) {
-    switch (viewParam.toLowerCase()) {
-      case "sidebar":
-        return (
-          <div>
-            <SideBarView />
-          </div>
-        );
-      case "stage":
-        return (
-          <div>
-            <StageViewWrapper />
-          </div>
-        );
-      default:
-        return (
-          <div>
-            <ConfigView />
-          </div>
-        );
-        break;
-    }
-  } else {
-    return <div></div>;
+
+  switch (viewParam.toLowerCase()) {
+    case "config":
+      return (
+        <div>
+          <ConfigView />
+        </div>
+      );
+    case "stage":
+      return (
+        <div>
+          <StageView />
+        </div>
+      );
+    default:
+      return (
+        <div>
+          <SideBarView />
+        </div>
+      );
   }
 }
 
