@@ -11,12 +11,17 @@ import {
 } from "../services/RepositoryService";
 import { LiveShareClient } from "@microsoft/live-share";
 import { LiveShareHost, app } from "@microsoft/teams-js";
-import { useEffect, useState } from "react";
-import { ContainerSchema, IFluidContainer, SharedMap } from "fluid-framework";
+import { useEffect, useState, useRef } from "react";
+import {
+  ContainerSchema,
+  IFluidContainer,
+  IValueChanged,
+  SharedMap,
+} from "fluid-framework";
 import { LiveCanvas } from "@microsoft/live-share-canvas";
 import { AzureClient } from "@fluidframework/azure-client";
 
-//import { Inspector } from "@babylonjs/inspector";
+import { Inspector } from "@babylonjs/inspector";
 
 // ... YOUR SCENE CREATION
 export const StageView = (): JSX.Element => {
@@ -45,7 +50,7 @@ export const StageView = (): JSX.Element => {
   let memoButton: GUI.Button;
   let closeMemoButton: GUI.Button;
   let memoInput: GUI.InputText;
-  
+
   useEffect(() => {
     const initTeams = async () => {
       await app.initialize();
@@ -58,17 +63,18 @@ export const StageView = (): JSX.Element => {
         return await client.joinContainer(containerSchema);
       };
       getContainer().then((item) => {
-        console.log(item.container);
         setContainer(item.container);
       });
     });
   }, []);
 
   const onSceneReady = (scene: BABYLON.Scene) => {
+    scene.onDisposeObservable.add(() => {
+      console.log(" scene disposed");
+    });
     // Uncomment the following to show the BabylonJS Inspector.
     //Inspector.Show(scene, {});
-    // Create Highlight Layer to show which mesh is selected.
-    hl = new BABYLON.HighlightLayer("hl1", scene);
+    hl = new BABYLON.HighlightLayer("hl1", scene); // Create Highlight Layer to show which mesh is selected.
     camera = new BABYLON.ArcRotateCamera(
       "camera1",
       Math.PI / 2,
@@ -100,7 +106,6 @@ export const StageView = (): JSX.Element => {
     meshDataList?.map((meshData: MeshData) => {
       return CreateMeshAsync(scene, meshData);
     });
-
     // Adding buttons to the scene
     AddUIControl(scene);
     // Setup mouse control behaviors
@@ -155,9 +160,6 @@ export const StageView = (): JSX.Element => {
     pointerDragBehavior.onDragStartObservable.add((event) => {});
     const meshMoveSharedMap = container!.initialObjects
       .movedSharedMap as SharedMap;
-    meshMoveSharedMap.on("valueChanged", (changed) => {
-      console.log("valueChanged", changed);
-    });
     pointerDragBehavior.onDragObservable.add((event) => {
       // if (camera != null && currentMesh != null) {
       //   camera.set(currentMesh!.id, {
@@ -189,10 +191,48 @@ export const StageView = (): JSX.Element => {
     return mesh;
   }
 
+  function SyncMesh(
+    scene: BABYLON.Scene,
+    changed: IValueChanged,
+    addRemoveSharedMap: SharedMap
+  ) {
+    if (changed.key.startsWith("add")) {
+      CreateMeshAndUpateRepoAsync(
+        scene,
+        addRemoveSharedMap.get(changed.key) as MeshData
+      );
+    } else if (changed.key.startsWith("remove")) {
+      meshDataList.some((mesh: any, index: number) => {
+        if (mesh.name === (addRemoveSharedMap.get(changed.key) as string)) {
+          meshDataList.splice(index, 1);
+          repository.setData("meshes", meshDataList);
+          let removedMesh = scene.getMeshByName(
+            addRemoveSharedMap.get(changed.key) as string
+          );
+          removedMesh?.dispose();
+          if (currentMesh && removedMesh!.name === currentMesh.name) {
+            removeButton.isVisible = false;
+            memoButton.isVisible = false;
+            closeMemoButton.isVisible = false;
+            memoInput.isVisible = false;
+          }
+          return true;
+        }
+      });
+    }
+  }
+
   // Add buttons.
   function AddUIControl(scene: BABYLON.Scene) {
     const advancedTexture = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
-
+    const addRemoveSharedMap = container!.initialObjects
+      .addRemoveSharedMap as SharedMap;
+    addRemoveSharedMap.on("valueChanged", (changed, local) => {
+      console.log("event received", addRemoveSharedMap.get(changed.key), local);
+      if (!local) {
+        SyncMesh(scene, changed, addRemoveSharedMap);
+      }
+    });
     // Add table button
     const addTableButton = GUI.Button.CreateSimpleButton(
       "addTableButton",
@@ -221,17 +261,7 @@ export const StageView = (): JSX.Element => {
       // After creating a mesh, update the list and repository data.
       CreateMeshAndUpateRepoAsync(scene, newMesh);
       // propagate the change to other clients
-      let addRemoveSharedMap = container!.initialObjects
-        .addRemoveSharedMap as SharedMap;
-      addRemoveSharedMap.on("valueChanged", (changed, local) => {
-        if (!local) {
-          CreateMeshAndUpateRepoAsync(
-            scene,
-            addRemoveSharedMap.get(changed.key) as MeshData
-          );
-        }
-      });
-      addRemoveSharedMap.set("add", newMesh);
+      addRemoveSharedMap.set(`add_${newMesh.name}`, newMesh);
     });
 
     // Add chair button
@@ -261,18 +291,7 @@ export const StageView = (): JSX.Element => {
       // After creating a mesh, update the list and repository data.
       CreateMeshAndUpateRepoAsync(scene, newMesh);
       // propagate the change to other clients
-      let addRemoveSharedMap = container!.initialObjects
-        .addRemoveSharedMap as SharedMap;
-      addRemoveSharedMap.on("valueChanged", (changed, local) => {
-        console.log("valueChanged local", local);
-        if (!local) {
-          CreateMeshAndUpateRepoAsync(
-            scene,
-            addRemoveSharedMap.get(changed.key) as MeshData
-          );
-        }
-      });
-      addRemoveSharedMap.set("add", newMesh);
+      addRemoveSharedMap.set(`add_${newMesh.name}`, newMesh);
     });
 
     // Remove Button
@@ -293,6 +312,7 @@ export const StageView = (): JSX.Element => {
       memoInput.isVisible = false;
       meshDataList.some((mesh: any, index: number) => {
         if (mesh.name === currentMesh!.name) {
+          addRemoveSharedMap.set(`remove_${mesh.name}`, mesh.name);
           meshDataList.splice(index, 1);
           repository.setData("meshes", meshDataList);
           return true;
