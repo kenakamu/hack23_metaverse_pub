@@ -8,8 +8,11 @@ import { useEffect } from "react";
 
 export const SideBarView = () => {
   useEffect(() => {
-    app.initialize();
-    app.notifySuccess();
+    const initApp = async () => {
+      await app.initialize();
+      app.notifySuccess();
+    };
+    initApp();
   }, []);
 
   const onclickButton = () => {

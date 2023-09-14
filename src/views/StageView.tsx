@@ -1,5 +1,4 @@
 import "../App.css";
-import React, { memo } from "react";
 import { v4 as uuid } from "uuid";
 import * as GUI from "@babylonjs/gui/2D";
 import * as BABYLON from "@babylonjs/core";
@@ -10,10 +9,29 @@ import {
   IRepositoryService,
   LocalStorageRepositoryService,
 } from "../services/RepositoryService";
+import { LiveShareClient } from "@microsoft/live-share";
+import { LiveShareHost, app } from "@microsoft/teams-js";
+import { useEffect, useState } from "react";
+import { ContainerSchema, IFluidContainer, SharedMap } from "fluid-framework";
+import { LiveCanvas } from "@microsoft/live-share-canvas";
+import { AzureClient } from "@fluidframework/azure-client";
+
 //import { Inspector } from "@babylonjs/inspector";
 
 // ... YOUR SCENE CREATION
 export const StageView = (): JSX.Element => {
+  const [container, setContainer] = useState<IFluidContainer>();
+  const [fluidClient] = useState<AzureClient>();
+
+  const containerSchema: ContainerSchema = {
+    initialObjects: {
+      liveCanvas: LiveCanvas,
+      movedSharedMap: SharedMap,
+      addRemoveSharedMap: SharedMap,
+      objName: SharedMap,
+      cameraObj: SharedMap,
+    },
+  };
   let meshDataList: MeshData[] = [];
   const repository: IRepositoryService = new LocalStorageRepositoryService();
   let ground: BABYLON.GroundMesh;
@@ -27,6 +45,25 @@ export const StageView = (): JSX.Element => {
   let memoButton: GUI.Button;
   let closeMemoButton: GUI.Button;
   let memoInput: GUI.InputText;
+  
+  useEffect(() => {
+    const initTeams = async () => {
+      await app.initialize();
+      app.notifySuccess();
+    };
+    initTeams().then((item) => {
+      const host = LiveShareHost.create();
+      const client = new LiveShareClient(host);
+      const getContainer = async () => {
+        return await client.joinContainer(containerSchema);
+      };
+      getContainer().then((item) => {
+        console.log(item.container);
+        setContainer(item.container);
+      });
+    });
+  }, []);
+
   const onSceneReady = (scene: BABYLON.Scene) => {
     // Uncomment the following to show the BabylonJS Inspector.
     //Inspector.Show(scene, {});
@@ -54,14 +91,13 @@ export const StageView = (): JSX.Element => {
       { width: 20, height: 20 },
       scene
     );
-    
     // load the initial data if not yet.
     if (meshDataList.length === 0) {
       meshDataList = repository.getData("meshes");
     }
 
     // Load the meshes to the scene
-    meshDataList.map((meshData: MeshData) => {
+    meshDataList?.map((meshData: MeshData) => {
       return CreateMeshAsync(scene, meshData);
     });
 
@@ -73,6 +109,16 @@ export const StageView = (): JSX.Element => {
   };
 
   const onRender = (scene: BABYLON.Scene) => {};
+
+  async function CreateMeshAndUpateRepoAsync(
+    scene: BABYLON.Scene,
+    meshData: MeshData
+  ) {
+    await CreateMeshAsync(scene, meshData);
+    // After creating a mesh, update the list and repository data.
+    meshDataList.push(meshData);
+    repository.setData("meshes", meshDataList);
+  }
 
   // Create a mesh from the glb file and the initial values
   async function CreateMeshAsync(scene: BABYLON.Scene, meshData: MeshData) {
@@ -107,7 +153,20 @@ export const StageView = (): JSX.Element => {
       dragPlaneNormal: new BABYLON.Vector3(0, 1, 0),
     });
     pointerDragBehavior.onDragStartObservable.add((event) => {});
-    pointerDragBehavior.onDragObservable.add((event) => {});
+    const meshMoveSharedMap = container!.initialObjects
+      .movedSharedMap as SharedMap;
+    meshMoveSharedMap.on("valueChanged", (changed) => {
+      console.log("valueChanged", changed);
+    });
+    pointerDragBehavior.onDragObservable.add((event) => {
+      // if (camera != null && currentMesh != null) {
+      //   camera.set(currentMesh!.id, {
+      //     x: event.delta._x,
+      //     y: event.delta._y,
+      //     z: event.delta._z,
+      //   });
+      // }
+    });
     pointerDragBehavior.onDragEndObservable.add((event) => {
       // When the drag ends, we save it's location.
       meshDataList.some((mesh: MeshData) => {
@@ -119,7 +178,12 @@ export const StageView = (): JSX.Element => {
           return true;
         }
       });
+      meshMoveSharedMap.set(currentMesh!.name, {
+        x: currentMesh!.position.x,
+        z: currentMesh!.position.z,
+      });
     });
+
     mesh.addBehavior(pointerDragBehavior);
 
     return mesh;
@@ -154,10 +218,20 @@ export const StageView = (): JSX.Element => {
         "This is table-" + name
       );
 
-      CreateMeshAsync(scene, newMesh);
       // After creating a mesh, update the list and repository data.
-      meshDataList.push(newMesh);
-      repository.setData("meshes", meshDataList);
+      CreateMeshAndUpateRepoAsync(scene, newMesh);
+      // propagate the change to other clients
+      let addRemoveSharedMap = container!.initialObjects
+        .addRemoveSharedMap as SharedMap;
+      addRemoveSharedMap.on("valueChanged", (changed, local) => {
+        if (!local) {
+          CreateMeshAndUpateRepoAsync(
+            scene,
+            addRemoveSharedMap.get(changed.key) as MeshData
+          );
+        }
+      });
+      addRemoveSharedMap.set("add", newMesh);
     });
 
     // Add chair button
@@ -184,10 +258,21 @@ export const StageView = (): JSX.Element => {
         { x: 0, y: 0, z: 0 }, // rotation
         "This is chair-" + name
       );
-      CreateMeshAsync(scene, newMesh);
       // After creating a mesh, update the list and repository data.
-      meshDataList.push(newMesh);
-      repository.setData("meshes", meshDataList);
+      CreateMeshAndUpateRepoAsync(scene, newMesh);
+      // propagate the change to other clients
+      let addRemoveSharedMap = container!.initialObjects
+        .addRemoveSharedMap as SharedMap;
+      addRemoveSharedMap.on("valueChanged", (changed, local) => {
+        console.log("valueChanged local", local);
+        if (!local) {
+          CreateMeshAndUpateRepoAsync(
+            scene,
+            addRemoveSharedMap.get(changed.key) as MeshData
+          );
+        }
+      });
+      addRemoveSharedMap.set("add", newMesh);
     });
 
     // Remove Button
@@ -314,7 +399,7 @@ export const StageView = (): JSX.Element => {
           return true;
         }
       });
-      
+
       startingPoint = getGroundPosition();
       if (startingPoint) {
         setTimeout(() => {
@@ -411,13 +496,20 @@ export const StageView = (): JSX.Element => {
 
   return (
     <div className="App">
-      <h3>Babylon Sample</h3>
-      <SceneComponent
-        antialias
-        onSceneReady={onSceneReady}
-        onRender={onRender}
-        id="my-canvas"
-      />
+      {container ? (
+        <div>
+          <h3>BabylonJS Demo</h3>
+          <h4></h4>
+          <SceneComponent
+            antialias
+            onSceneReady={onSceneReady}
+            onRender={onRender}
+            id="my-canvas"
+          />
+        </div>
+      ) : (
+        <div></div>
+      )}
     </div>
   );
 };

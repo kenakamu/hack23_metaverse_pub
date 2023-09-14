@@ -5,21 +5,27 @@
 
 import { useEffect } from "react";
 import { app, pages } from "@microsoft/teams-js";
+// import { useNavigate } from "react-router-dom";
 
 export const ConfigView = () => {
   useEffect(() => {
-    app.initialize().then(() => {
+    const initApp = async () => {
+      await app.initialize();
+      app.notifySuccess();
+      console.log("config!!");
+    };
+    initApp().then((item) => {
       pages.config.registerOnSaveHandler(onSavePagesConfig);
       pages.config.setValidityState(true);
-      app.notifySuccess();
     });
   }, []);
-  const onSavePagesConfig = async () => {
+  const onSavePagesConfig = async (event: any) => {
     await pages.config.setConfig({
       contentUrl: window.location.origin + "?inTeams=1&view=sideBar",
       websiteUrl: window.location.origin,
       suggestedDisplayName: "Live Share Canvas demo",
     });
+    event.notifySuccess();
   };
 
   return <div>This is the config page.</div>;
