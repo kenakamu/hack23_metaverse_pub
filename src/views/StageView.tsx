@@ -45,6 +45,7 @@ export const StageView = (): JSX.Element => {
   let memoButton: GUI.Button;
   let closeMemoButton: GUI.Button;
   let memoInput: GUI.InputText;
+  
   useEffect(() => {
     const initTeams = async () => {
       await app.initialize();
@@ -263,6 +264,7 @@ export const StageView = (): JSX.Element => {
       let addRemoveSharedMap = container!.initialObjects
         .addRemoveSharedMap as SharedMap;
       addRemoveSharedMap.on("valueChanged", (changed, local) => {
+        console.log("valueChanged local", local);
         if (!local) {
           CreateMeshAndUpateRepoAsync(
             scene,
