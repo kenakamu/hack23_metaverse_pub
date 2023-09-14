@@ -1,23 +1,18 @@
 import "../App.css";
-import React, { memo } from "react";
 import { v4 as uuid } from "uuid";
 import * as GUI from "@babylonjs/gui/2D";
 import * as BABYLON from "@babylonjs/core";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
 import SceneComponent from "babylonjs-hook";
 import { MeshData } from "../models/MeshData";
-import { InsecureTokenProvider } from "@fluidframework/test-client-utils";
 import {
   IRepositoryService,
   LocalStorageRepositoryService,
 } from "../services/RepositoryService";
-import {
-  LiveShareClient,
-  ILiveShareClientOptions,
-} from "@microsoft/live-share";
+import { LiveShareClient } from "@microsoft/live-share";
 import { LiveShareHost, app } from "@microsoft/teams-js";
 import { useEffect, useState } from "react";
-import { IFluidContainer, SharedMap, SharedString } from "fluid-framework";
+import { ContainerSchema, IFluidContainer, SharedMap } from "fluid-framework";
 import { LiveCanvas } from "@microsoft/live-share-canvas";
 import { AzureClient } from "@fluidframework/azure-client";
 
@@ -28,16 +23,16 @@ export const StageView = (): JSX.Element => {
   const [container, setContainer] = useState<IFluidContainer>();
   const [fluidClient] = useState<AzureClient>();
 
-  const containerSchema = {
+  const containerSchema: ContainerSchema = {
     initialObjects: {
       liveCanvas: LiveCanvas,
-      objRotateY: SharedMap,
+      movedSharedMap: SharedMap,
+      addRemoveSharedMap: SharedMap,
       objName: SharedMap,
       cameraObj: SharedMap,
     },
   };
   let meshDataList: MeshData[] = [];
-
   const repository: IRepositoryService = new LocalStorageRepositoryService();
   let ground: BABYLON.GroundMesh;
   let camera: BABYLON.ArcRotateCamera;
@@ -66,25 +61,7 @@ export const StageView = (): JSX.Element => {
         setContainer(item.container);
       });
     });
-    // setFluidClient(new AzureClient(inSecureClientOptions));
-    // createContainer().then((id) => {
-    //   getContainer(id).then((item) => {
-    //     setContainer(item);
-    //   });
-    // });
   }, []);
-
-  const createContainer = async (): Promise<string> => {
-    const { container } = await fluidClient!.createContainer(containerSchema);
-    const containerId = await container.attach();
-    return containerId;
-  };
-
-  const getContainer = async (id: string): Promise<IFluidContainer> => {
-    const { container } = await fluidClient!.getContainer(id, containerSchema);
-    console.log("container" + container);
-    return container;
-  };
 
   const onSceneReady = (scene: BABYLON.Scene) => {
     // Uncomment the following to show the BabylonJS Inspector.
@@ -113,8 +90,6 @@ export const StageView = (): JSX.Element => {
       { width: 20, height: 20 },
       scene
     );
-    console.log(container?.initialObjects.objRotateY as SharedMap);
-    const items = container?.initialObjects.objRotateY as SharedMap;
     // load the initial data if not yet.
     if (meshDataList.length === 0) {
       meshDataList = repository.getData("meshes");
@@ -133,6 +108,16 @@ export const StageView = (): JSX.Element => {
   };
 
   const onRender = (scene: BABYLON.Scene) => {};
+
+  async function CreateMeshAndUpateRepoAsync(
+    scene: BABYLON.Scene,
+    meshData: MeshData
+  ) {
+    await CreateMeshAsync(scene, meshData);
+    // After creating a mesh, update the list and repository data.
+    meshDataList.push(meshData);
+    repository.setData("meshes", meshDataList);
+  }
 
   // Create a mesh from the glb file and the initial values
   async function CreateMeshAsync(scene: BABYLON.Scene, meshData: MeshData) {
@@ -167,7 +152,8 @@ export const StageView = (): JSX.Element => {
       dragPlaneNormal: new BABYLON.Vector3(0, 1, 0),
     });
     pointerDragBehavior.onDragStartObservable.add((event) => {});
-    const meshMoveSharedMap = container!.initialObjects.objRotateY as SharedMap;
+    const meshMoveSharedMap = container!.initialObjects
+      .movedSharedMap as SharedMap;
     meshMoveSharedMap.on("valueChanged", (changed) => {
       console.log("valueChanged", changed);
     });
@@ -231,10 +217,20 @@ export const StageView = (): JSX.Element => {
         "This is table-" + name
       );
 
-      CreateMeshAsync(scene, newMesh);
       // After creating a mesh, update the list and repository data.
-      meshDataList.push(newMesh);
-      repository.setData("meshes", meshDataList);
+      CreateMeshAndUpateRepoAsync(scene, newMesh);
+      // propagate the change to other clients
+      let addRemoveSharedMap = container!.initialObjects
+        .addRemoveSharedMap as SharedMap;
+      addRemoveSharedMap.on("valueChanged", (changed, local) => {
+        if (!local) {
+          CreateMeshAndUpateRepoAsync(
+            scene,
+            addRemoveSharedMap.get(changed.key) as MeshData
+          );
+        }
+      });
+      addRemoveSharedMap.set("add", newMesh);
     });
 
     // Add chair button
@@ -261,10 +257,20 @@ export const StageView = (): JSX.Element => {
         { x: 0, y: 0, z: 0 }, // rotation
         "This is chair-" + name
       );
-      CreateMeshAsync(scene, newMesh);
       // After creating a mesh, update the list and repository data.
-      meshDataList.push(newMesh);
-      repository.setData("meshes", meshDataList);
+      CreateMeshAndUpateRepoAsync(scene, newMesh);
+      // propagate the change to other clients
+      let addRemoveSharedMap = container!.initialObjects
+        .addRemoveSharedMap as SharedMap;
+      addRemoveSharedMap.on("valueChanged", (changed, local) => {
+        if (!local) {
+          CreateMeshAndUpateRepoAsync(
+            scene,
+            addRemoveSharedMap.get(changed.key) as MeshData
+          );
+        }
+      });
+      addRemoveSharedMap.set("add", newMesh);
     });
 
     // Remove Button
