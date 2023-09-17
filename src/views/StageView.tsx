@@ -11,7 +11,7 @@ import {
 } from "../services/RepositoryService";
 import { LiveShareClient } from "@microsoft/live-share";
 import { LiveShareHost, app } from "@microsoft/teams-js";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import {
   ContainerSchema,
   IFluidContainer,
@@ -19,37 +19,33 @@ import {
   SharedMap,
 } from "fluid-framework";
 import { LiveCanvas } from "@microsoft/live-share-canvas";
-import { AzureClient } from "@fluidframework/azure-client";
-
+import { CreateButton } from "../services/GUIService";
 import { Inspector } from "@babylonjs/inspector";
 
 // ... YOUR SCENE CREATION
 export const StageView = (): JSX.Element => {
   const [container, setContainer] = useState<IFluidContainer>();
-  const [fluidClient] = useState<AzureClient>();
-
   const containerSchema: ContainerSchema = {
     initialObjects: {
       liveCanvas: LiveCanvas,
-      movedSharedMap: SharedMap,
-      addRemoveSharedMap: SharedMap,
+      meshSharedMap: SharedMap,
       objName: SharedMap,
       cameraObj: SharedMap,
     },
   };
-  let meshDataList: MeshData[] = [];
+
   const repository: IRepositoryService = new LocalStorageRepositoryService();
+  let meshDataList: MeshData[] = []; // keep the partial mesh data in the memory.
   let ground: BABYLON.GroundMesh;
   let camera: BABYLON.ArcRotateCamera;
   let hl: BABYLON.HighlightLayer;
   let canvas: BABYLON.Nullable<HTMLCanvasElement>;
-  // data structure
-  let currentMesh: BABYLON.Nullable<BABYLON.AbstractMesh> = null;
-  // UI controls
+  let currentMesh: BABYLON.Nullable<BABYLON.AbstractMesh> = null; // selected mesh
   let removeButton: GUI.Button;
   let memoButton: GUI.Button;
   let closeMemoButton: GUI.Button;
   let memoInput: GUI.InputText;
+  let meshSharedMap: SharedMap;
 
   useEffect(() => {
     const initTeams = async () => {
@@ -66,14 +62,19 @@ export const StageView = (): JSX.Element => {
         setContainer(item.container);
       });
     });
-  }, []);
+  });
 
   const onSceneReady = (scene: BABYLON.Scene) => {
-    scene.onDisposeObservable.add(() => {
-      console.log(" scene disposed");
+    // Setup SharedMap change event.
+    meshSharedMap = container!.initialObjects.meshSharedMap as SharedMap;
+    meshSharedMap.on("valueChanged", (changed, local) => {
+      if (!local) {
+        SyncMesh(scene, changed, meshSharedMap);
+      }
     });
     // Uncomment the following to show the BabylonJS Inspector.
     //Inspector.Show(scene, {});
+
     hl = new BABYLON.HighlightLayer("hl1", scene); // Create Highlight Layer to show which mesh is selected.
     camera = new BABYLON.ArcRotateCamera(
       "camera1",
@@ -115,6 +116,7 @@ export const StageView = (): JSX.Element => {
 
   const onRender = (scene: BABYLON.Scene) => {};
 
+  // Create a mesh and update list and repository data.
   async function CreateMeshAndUpateRepoAsync(
     scene: BABYLON.Scene,
     meshData: MeshData
@@ -153,21 +155,16 @@ export const StageView = (): JSX.Element => {
     );
     mesh.name = meshData.name;
 
-    // meshes should be draggable for X and Z axies only.
     let pointerDragBehavior = new BABYLON.PointerDragBehavior({
-      dragPlaneNormal: new BABYLON.Vector3(0, 1, 0),
+      dragPlaneNormal: new BABYLON.Vector3(0, 1, 0), // meshes should be draggable for X and Z axies only.
     });
-    pointerDragBehavior.onDragStartObservable.add((event) => {});
-    const meshMoveSharedMap = container!.initialObjects
-      .movedSharedMap as SharedMap;
     pointerDragBehavior.onDragObservable.add((event) => {
-      // if (camera != null && currentMesh != null) {
-      //   camera.set(currentMesh!.id, {
-      //     x: event.delta._x,
-      //     y: event.delta._y,
-      //     z: event.delta._z,
-      //   });
-      // }
+      // propagete the position change to other clients
+      meshSharedMap.set(`move_${currentMesh!.name}`, {
+        name: currentMesh!.name,
+        x: currentMesh!.position.x,
+        z: currentMesh!.position.z,
+      });
     });
     pointerDragBehavior.onDragEndObservable.add((event) => {
       // When the drag ends, we save it's location.
@@ -180,7 +177,9 @@ export const StageView = (): JSX.Element => {
           return true;
         }
       });
-      meshMoveSharedMap.set(currentMesh!.name, {
+      // propagete the position change to other clients
+      meshSharedMap.set(`move_${currentMesh!.name}`, {
+        name: currentMesh!.name,
         x: currentMesh!.position.x,
         z: currentMesh!.position.z,
       });
@@ -194,59 +193,73 @@ export const StageView = (): JSX.Element => {
   function SyncMesh(
     scene: BABYLON.Scene,
     changed: IValueChanged,
-    addRemoveSharedMap: SharedMap
+    meshSharedMap: SharedMap
   ) {
     if (changed.key.startsWith("add")) {
       CreateMeshAndUpateRepoAsync(
         scene,
-        addRemoveSharedMap.get(changed.key) as MeshData
+        meshSharedMap.get(changed.key) as MeshData
       );
     } else if (changed.key.startsWith("remove")) {
       meshDataList.some((mesh: any, index: number) => {
-        if (mesh.name === (addRemoveSharedMap.get(changed.key) as string)) {
+        if (mesh.name === (meshSharedMap.get(changed.key) as string)) {
           meshDataList.splice(index, 1);
           repository.setData("meshes", meshDataList);
           let removedMesh = scene.getMeshByName(
-            addRemoveSharedMap.get(changed.key) as string
+            meshSharedMap.get(changed.key) as string
           );
           removedMesh?.dispose();
           if (currentMesh && removedMesh!.name === currentMesh.name) {
-            removeButton.isVisible = false;
-            memoButton.isVisible = false;
-            closeMemoButton.isVisible = false;
-            memoInput.isVisible = false;
+            removeButton.isVisible =
+              memoButton.isVisible =
+              closeMemoButton.isVisible =
+              memoInput.isVisible =
+                false;
           }
           return true;
         }
       });
+    } else if (changed.key.startsWith("memo")) {
+      let meshData = meshDataList.find(
+        (meshData: MeshData) =>
+          meshSharedMap.get(changed.key).name === meshData.name
+      );
+      meshData!.memo = meshSharedMap.get(changed.key).memo;
+    } else if (changed.key.startsWith("move")) {
+      let meshData = meshDataList.find(
+        (meshData: MeshData) =>
+          meshSharedMap.get(changed.key).name === meshData.name
+      );
+      meshData!.position.x = meshSharedMap.get(changed.key).x;
+      meshData!.position.z = meshSharedMap.get(changed.key).z;
+      let mesh = scene.getMeshByName(meshSharedMap.get(changed.key).name);
+      mesh!.position.x = meshSharedMap.get(changed.key).x;
+      mesh!.position.z = meshSharedMap.get(changed.key).z;
+    } else if (changed.key.startsWith("rotate")) {
+      console.log(
+        "rotateevent",
+        meshSharedMap.get(changed.key).name,
+        ",",
+        meshSharedMap.get(changed.key).y
+      );
+      let meshData = meshDataList.find(
+        (meshData: MeshData) =>
+          meshSharedMap.get(changed.key).name === meshData.name
+      );
+      meshData!.rotation.y = meshSharedMap.get(changed.key).y;
+      let mesh = scene.getMeshByName(meshSharedMap.get(changed.key).name);
+      mesh!.rotation.y = meshSharedMap.get(changed.key).y;
     }
   }
 
   // Add buttons.
   function AddUIControl(scene: BABYLON.Scene) {
     const advancedTexture = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
-    const addRemoveSharedMap = container!.initialObjects
-      .addRemoveSharedMap as SharedMap;
-    addRemoveSharedMap.on("valueChanged", (changed, local) => {
-      console.log("event received", addRemoveSharedMap.get(changed.key), local);
-      if (!local) {
-        SyncMesh(scene, changed, addRemoveSharedMap);
-      }
-    });
     // Add table button
-    const addTableButton = GUI.Button.CreateSimpleButton(
-      "addTableButton",
-      "Add Table"
-    );
-    addTableButton.width = "100px";
-    addTableButton.height = "20px";
-    addTableButton.horizontalAlignment = GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-    addTableButton.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_TOP;
-    addTableButton.color = "white";
-    addTableButton.background = "blue";
-    addTableButton.fontSize = 12;
-    addTableButton.top = "10px";
-    addTableButton.left = "10px";
+    const addTableButton = CreateButton("addTableButton", "Add Table", {
+      top: 10,
+      left: 10,
+    });
     addTableButton.onPointerClickObservable.add(() => {
       let name = uuid();
       let newMesh = new MeshData(
@@ -261,23 +274,14 @@ export const StageView = (): JSX.Element => {
       // After creating a mesh, update the list and repository data.
       CreateMeshAndUpateRepoAsync(scene, newMesh);
       // propagate the change to other clients
-      addRemoveSharedMap.set(`add_${newMesh.name}`, newMesh);
+      meshSharedMap.set(`add_${newMesh.name}`, newMesh);
     });
 
     // Add chair button
-    const addChiarButton = GUI.Button.CreateSimpleButton(
-      "addChiarButton",
-      "Add Chair"
-    );
-    addChiarButton.width = "100px";
-    addChiarButton.height = "20px";
-    addChiarButton.horizontalAlignment = GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-    addChiarButton.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_TOP;
-    addChiarButton.color = "white";
-    addChiarButton.background = "blue";
-    addChiarButton.fontSize = 12;
-    addChiarButton.top = "30px";
-    addChiarButton.left = "10px";
+    const addChiarButton = CreateButton("addChiarButton", "Add Chair", {
+      top: 30,
+      left: 10,
+    });
     addChiarButton.onPointerClickObservable.add(() => {
       let name = uuid();
       let newMesh = new MeshData(
@@ -291,28 +295,23 @@ export const StageView = (): JSX.Element => {
       // After creating a mesh, update the list and repository data.
       CreateMeshAndUpateRepoAsync(scene, newMesh);
       // propagate the change to other clients
-      addRemoveSharedMap.set(`add_${newMesh.name}`, newMesh);
+      meshSharedMap.set(`add_${newMesh.name}`, newMesh);
     });
 
     // Remove Button
-    removeButton = GUI.Button.CreateSimpleButton("removeButton", "Remove");
+    removeButton = CreateButton("removeButton", "Remove");
     removeButton.width = "50px";
-    removeButton.height = "20px";
-    removeButton.horizontalAlignment = GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-    removeButton.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_TOP;
-    removeButton.color = "white";
-    removeButton.background = "blue";
-    removeButton.fontSize = 12;
     removeButton.isVisible = false;
     removeButton.onPointerClickObservable.add(() => {
       currentMesh?.dispose();
-      removeButton.isVisible = false;
-      memoButton.isVisible = false;
-      closeMemoButton.isVisible = false;
-      memoInput.isVisible = false;
+      removeButton.isVisible =
+        memoButton.isVisible =
+        closeMemoButton.isVisible =
+        memoInput.isVisible =
+          false;
       meshDataList.some((mesh: any, index: number) => {
         if (mesh.name === currentMesh!.name) {
-          addRemoveSharedMap.set(`remove_${mesh.name}`, mesh.name);
+          meshSharedMap.set(`remove_${mesh.name}`, mesh.name);
           meshDataList.splice(index, 1);
           repository.setData("meshes", meshDataList);
           return true;
@@ -321,14 +320,8 @@ export const StageView = (): JSX.Element => {
     });
 
     // Create Memo Buttom
-    memoButton = GUI.Button.CreateSimpleButton("memoButton", "Memo");
+    memoButton = CreateButton("memoButton", "Memo");
     memoButton.width = "50px";
-    memoButton.height = "20px";
-    memoButton.horizontalAlignment = GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-    memoButton.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_TOP;
-    memoButton.color = "white";
-    memoButton.background = "blue";
-    memoButton.fontSize = 12;
     memoButton.isVisible = false;
     memoButton.onPointerClickObservable.add(() => {
       memoInput.isVisible = true;
@@ -336,14 +329,8 @@ export const StageView = (): JSX.Element => {
     });
 
     // Create Memo Buttom
-    closeMemoButton = GUI.Button.CreateSimpleButton("closeMemoButton", "Close");
+    closeMemoButton = CreateButton("closeMemoButton", "Close");
     closeMemoButton.width = "50px";
-    closeMemoButton.height = "20px";
-    closeMemoButton.horizontalAlignment = GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-    closeMemoButton.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_TOP;
-    closeMemoButton.color = "white";
-    closeMemoButton.background = "blue";
-    closeMemoButton.fontSize = 12;
     closeMemoButton.isVisible = false;
     closeMemoButton.onPointerClickObservable.add(() => {
       memoInput.isVisible = false;
@@ -361,12 +348,12 @@ export const StageView = (): JSX.Element => {
     memoInput.onBlurObservable.add((value) => {
       meshDataList.some((mesh: any) => {
         if (mesh.name === currentMesh!.name) {
-          mesh.position_x = currentMesh!.position.x;
-          mesh.position_y = currentMesh!.position.y;
-          mesh.position_z = currentMesh!.position.z;
-          mesh.rotation_y = currentMesh!.rotation.y;
           mesh.memo = value.text;
           repository.setData("meshes", meshDataList);
+          meshSharedMap.set(`memo_${mesh.name}`, {
+            name: mesh.name,
+            memo: value.text,
+          });
           return true;
         }
       });
@@ -395,6 +382,7 @@ export const StageView = (): JSX.Element => {
 
     // When selecting a mesh.
     let pointerDownOnMesh = (mesh: BABYLON.Nullable<BABYLON.AbstractMesh>) => {
+      camera.inputs.removeByType("ArcRotateCameraMouseWheelInput");
       hl.removeAllMeshes();
       hl.addMesh(mesh as BABYLON.Mesh, BABYLON.Color3.Green());
       currentMesh = mesh;
@@ -487,7 +475,6 @@ export const StageView = (): JSX.Element => {
   function SetupMouseWheelBehavior(scene: BABYLON.Scene) {
     window.addEventListener("wheel", (event) => {
       if (currentMesh !== null) {
-        camera.inputs.removeByType("ArcRotateCameraMouseWheelInput");
         let delta = Math.sign(event.deltaY);
         //currentMesh.rotation.y += delta * 0.1;
         currentMesh.reIntegrateRotationIntoRotationQuaternion = true;
@@ -500,13 +487,14 @@ export const StageView = (): JSX.Element => {
         currentMesh.rotation = currentMesh.rotationQuaternion!.toEulerAngles();
         meshDataList.some((mesh: any) => {
           if (mesh.name === currentMesh!.name) {
-            mesh.position.x = currentMesh!.position.x;
-            mesh.position.y = currentMesh!.position.y;
-            mesh.position.z = currentMesh!.position.z;
             mesh.rotation.y = currentMesh!.rotation.y;
             repository.setData("meshes", meshDataList);
             return true;
           }
+        });
+        meshSharedMap.set(`rotate_${currentMesh!.name}`, {
+          name: currentMesh!.name,
+          y: currentMesh!.rotation.y,
         });
       } else {
         camera.wheelPrecision = 50;
@@ -518,8 +506,6 @@ export const StageView = (): JSX.Element => {
     <div className="App">
       {container ? (
         <div>
-          <h3>BabylonJS Demo</h3>
-          <h4></h4>
           <SceneComponent
             antialias
             onSceneReady={onSceneReady}
