@@ -10,3 +10,11 @@ export class RotateInfo {
     public name: string,
     public y: number) {}
 }
+
+export enum SyncActionType {
+  Add,
+  Remove,
+  Drag,
+  Rotate,
+  UpdateMemo,
+}

@@ -26,7 +26,7 @@
   "accentColor": "#FFFFFF",
   "configurableTabs": [
     {
-      "configurationUrl": "https://fff0-126-114-243-250.ngrok-free.app?view=config&inTeams=1",
+      "configurationUrl": "https://c5c8-126-114-243-250.ngrok-free.app?view=config&inTeams=1",
       "canUpdateConfiguration": false,
       "scopes": ["groupchat"],
       "context": ["meetingSidePanel", "meetingStage"]

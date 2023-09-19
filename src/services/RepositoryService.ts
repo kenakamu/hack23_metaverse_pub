@@ -9,6 +9,7 @@ export class LocalStorageRepositoryService implements IRepositoryService {
   setData(key: string, meshDataList: MeshData[]) {
     localStorage.setItem(key, JSON.stringify(meshDataList));
   }
+
   getData(key: string): MeshData[] {
     var meshDataList: MeshData[] = [];
     var meshesJson = localStorage.getItem("meshes");
