@@ -8,18 +8,9 @@ export function CreateStage(scene: BABYLON.Scene): {
   ground: BABYLON.GroundMesh;
   canvas: BABYLON.Nullable<HTMLCanvasElement>;
 } {
-  let highlight = new BABYLON.HighlightLayer("hl1", scene);
-  let camera = new BABYLON.ArcRotateCamera(
-    "camera1",
-    Math.PI / 2,
-    Math.PI / 3,
-    20,
-    BABYLON.Vector3.Zero(),
-    scene
-  );
-  camera.wheelPrecision = 50;
   let canvas = scene.getEngine().getRenderingCanvas();
-  camera.attachControl(canvas, true);
+  let highlight = new BABYLON.HighlightLayer("hl1", scene);
+  let camera = CreateCamera(scene);
   const light = new BABYLON.HemisphericLight(
     "light",
     new BABYLON.Vector3(0, 1, 0),
@@ -40,7 +31,8 @@ export function CreateButton(
   width: string,
   height: string,
   isVisible: boolean,
-  position: { top: string; left: string } | null = null
+  position: { top: string; left: string } | null = null,
+  linkOffset: { x: number; y: number} | null = null,
 ): GUI.Button {
   const button = GUI.Button.CreateSimpleButton(name, text);
   button.width = width;
@@ -55,6 +47,10 @@ export function CreateButton(
     button.top = position.top;
     button.left = position.left;
   }
+  if(linkOffset !== null){
+    button.linkOffsetX = linkOffset.x;
+    button.linkOffsetY = linkOffset.y;
+  }
   return button;
 }
 
@@ -66,5 +62,22 @@ export function CreateInput(): GUI.InputTextArea {
   memoInput.background = "lightgray";
   memoInput.focusedBackground = "white";
   memoInput.color = "black";
+  memoInput.linkOffsetX = 200;
+
   return memoInput;
+}
+
+function CreateCamera(scene: BABYLON.Scene): BABYLON.ArcRotateCamera {
+  const camera = new BABYLON.ArcRotateCamera("camera1", Math.PI / 2, Math.PI / 3, 20, BABYLON.Vector3.Zero(), scene);
+  camera.wheelPrecision = 50;
+  let canvas = scene.getEngine().getRenderingCanvas();
+  camera.lowerAlphaLimit = 0;
+  camera.upperAlphaLimit = Math.PI;
+  camera.lowerBetaLimit = Math.PI/3;
+  camera.upperBetaLimit = Math.PI/2.1;
+  camera.lowerRadiusLimit= 3;
+  camera.attachControl(canvas, true);
+  
+
+  return camera;
 }

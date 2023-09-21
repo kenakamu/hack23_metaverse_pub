@@ -5,8 +5,7 @@ import { ConfigView } from "./views/ConfigView";
 import { useRef, useEffect } from "react";
 import { app } from "@microsoft/teams-js";
 
-const searchParams = new URL(window.location.href).searchParams;
-const inTeams = searchParams.get("inTeams") === "1";
+const inTeams = new URL(window.location.href).searchParams.get("inTeams") === "1";
 
 function App() {
   const initializeStartedRef = useRef(false);
@@ -29,7 +28,7 @@ function App() {
     initialize();
   });
   const params = new URLSearchParams(window.location.search);
-  const viewParam = params.get("view") ?? "";
+  const viewParam = params.get("view") ?? inTeams ? "stageview" : "stage";
   switch (viewParam.toLowerCase()) {
     case "config":
       return (
@@ -43,6 +42,7 @@ function App() {
           <StageView />
         </div>
       );
+    case "stageview":
     default:
       return (
         <div>
