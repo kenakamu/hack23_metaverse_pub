@@ -27,7 +27,7 @@ function App() {
     //initialize();
   });
   const params = new URLSearchParams(window.location.search);
-  const viewParam = params.get("view") ?? inTeams ? "stageview" : "stage";
+  const viewParam = params.get("view")?? "stage";
   switch (viewParam.toLowerCase()) {
     case "config":
       return (
@@ -41,7 +41,6 @@ function App() {
           <StageView />
         </div>
       );
-    case "stageview":
     default:
       return (
         <div>

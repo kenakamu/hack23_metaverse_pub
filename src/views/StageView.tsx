@@ -43,10 +43,10 @@ export const StageView = (): JSX.Element => {
     initializeStartedRef.current = true;
     const initialize = async () => {
       try {
-        console.log("StageView.tsx: initializing client SDK initialized");
         await app.initialize();
         app.notifyAppLoaded();
         app.notifySuccess();
+        console.log("StageView.tsx: initializing client SDK initialized");
       } catch (error) {
         console.error(error);
       }
@@ -60,8 +60,8 @@ export const StageView = (): JSX.Element => {
     }
 
     console.log("StageView.tsx: initializing client SDK");
-    if (inTeams) initialize();
-    joinContainer();
+    if (inTeams) initialize().then(() => joinContainer());
+    else joinContainer();
   });
 
   const onSceneReady = (scene: BABYLON.Scene) => {
