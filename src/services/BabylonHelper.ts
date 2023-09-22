@@ -77,7 +77,8 @@ function CreateCamera(scene: BABYLON.Scene): BABYLON.ArcRotateCamera {
   camera.upperBetaLimit = Math.PI/2.1;
   camera.lowerRadiusLimit= 3;
   camera.attachControl(canvas, true);
+  camera.speed = 0.5;
+  camera.angularSensibilityX = 4000;
   
-
   return camera;
 }

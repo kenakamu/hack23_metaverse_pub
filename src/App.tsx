@@ -24,7 +24,7 @@ function App() {
       }
     };
     console.log("App.tsx: initializing client SDK");
-    initialize();
+    //initialize();
   });
   const params = new URLSearchParams(window.location.search);
   const viewParam = params.get("view") ?? inTeams ? "stageview" : "stage";

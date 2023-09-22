@@ -3,7 +3,7 @@
   "version": "1.0.1",
   "manifestVersion": "1.12",
   "id": "2cb324ac-a51c-4bf4-aef9-31453c2c64fd",
-  "packageName": "com.microsoft.teams.liveshareinking",
+  "packageName": "com.microsoft.teams.eventspacemanagement",
   "name": {
     "short": "Event Space Management",
     "full": "Event Space Management demo"
