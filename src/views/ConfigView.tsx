@@ -23,7 +23,7 @@ export const ConfigView = () => {
     await pages.config.setConfig({
       contentUrl: window.location.origin + "?inTeams=1&view=sideBar",
       websiteUrl: window.location.origin,
-      suggestedDisplayName: "Live Share Canvas demo",
+      suggestedDisplayName: "Event Space Management",
     });
     event.notifySuccess();
   };

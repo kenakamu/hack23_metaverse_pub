@@ -6,12 +6,12 @@ import * as BABYLON from "@babylonjs/core";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
 import SceneComponent from "babylonjs-hook";
 import { LiveShareHost, app } from "@microsoft/teams-js";
-import { ILiveShareJoinResults, LiveShareClient, TestLiveShareHost } from "@microsoft/live-share";
+import { LiveState, LivePresence, LivePresenceUser, ILiveShareJoinResults, LiveShareClient, TestLiveShareHost } from "@microsoft/live-share";
 import { ContainerSchema, IFluidContainer, IValueChanged, SharedMap, } from "fluid-framework";
 import { IRepositoryService, LocalStorageRepositoryService, } from "../services/RepositoryService";
 import { CreateStage, CreateButton, CreateInput } from "../services/BabylonHelper";
 import { MeshData } from "../models/MeshData";
-import { DragInfo, RotateInfo, SyncActionType } from "../models/SyncInfo";
+import { DragInfo, RotateInfo, SyncActionType, ICameraControlInfo } from "../models/SyncInfo";
 import { Inspector } from "@babylonjs/inspector";
 
 const glbImageSource: string = "https://raw.githubusercontent.com/kenakamu/hack23_metaverse_pub/main/src/data/";
@@ -21,11 +21,15 @@ export const StageView = (): JSX.Element => {
   const [container, setContainer] = useState<IFluidContainer>();
   const containerSchema: ContainerSchema = {
     initialObjects: {
-      meshSharedMap: SharedMap
+      presence: LivePresence<ICameraControlInfo>,
+      meshSharedMap: SharedMap,
+      takeControl: LiveState,
     },
   };
   const initializeStartedRef = useRef(false);
   const repository: IRepositoryService = new LocalStorageRepositoryService();
+  const updateFrequencies: number = 100;
+  const framesToCompensate: number = 1 + updateFrequencies / (1000 / 60);
   let meshDataList: MeshData[] = []; // Store mesh data for the repository
   let camera: BABYLON.ArcRotateCamera;
   let highlight: BABYLON.HighlightLayer;
@@ -37,6 +41,14 @@ export const StageView = (): JSX.Element => {
   let closeMemoButton: GUI.Button;
   let memoInput: GUI.InputText;
   let meshSharedMap: SharedMap;
+  let presence: LivePresence<ICameraControlInfo>;
+  let takeControl: LiveState;
+  let takeCamControlButton: HTMLButtonElement;
+  let remoteControlled: boolean;
+  let currentCameraPosition: BABYLON.Vector3;
+  let currentCameraRotation: BABYLON.Vector3;
+  let takingControl: boolean;
+  let lastTime: number;
 
   useEffect(() => {
     if (initializeStartedRef.current) return;
@@ -51,7 +63,7 @@ export const StageView = (): JSX.Element => {
         console.error(error);
       }
     };
-    
+
     const joinContainer = async () => {
       const host = inTeams ? LiveShareHost.create() : TestLiveShareHost.create();
       const client = new LiveShareClient(host);
@@ -79,18 +91,66 @@ export const StageView = (): JSX.Element => {
 
     AddUIControl(scene);
     SetupPointerBehavior(scene);
-    SetupMouseWheelBehavior(scene);
+    SetupMouseWheelBehavior();
+    InitializeCameraControl();
+    initializePresenceLogic(scene);
 
-    // setup meshSharedMap to synchronize between clients if in Teams.
-    // if (inTeams) {
+    // setup to synchronize between clients
     meshSharedMap = container!.initialObjects.meshSharedMap as SharedMap;
     meshSharedMap.on("valueChanged", (changed: IValueChanged, local: boolean) => {
       if (!local) {
         SyncMesh(scene, changed, meshSharedMap);
       }
     });
-    // }
-  };
+    presence = container!.initialObjects.presence as LivePresence<ICameraControlInfo>;
+    presence.on("presenceChanged", (userPresence: LivePresenceUser<ICameraControlInfo>, local: boolean) => {
+      // If it's not the local user
+      if (!local) {
+        console.dir(userPresence);
+        if (userPresence.state === "online") {
+          if (remoteControlled) {
+            let localCamera = scene.activeCamera as BABYLON.ArcRotateCamera;
+            BABYLON.Animation.CreateAndStartAnimation("camerapos",
+              scene.activeCamera,
+              "position", 60, framesToCompensate,
+              localCamera.position,
+              new BABYLON.Vector3(userPresence.data!.cameraPosition._x, userPresence.data!.cameraPosition._y - 0.7, userPresence.data!.cameraPosition._z), 0);
+
+            BABYLON.Animation.CreateAndStartAnimation("camerarot",
+              scene.activeCamera,
+              "rotation", 60, framesToCompensate,
+              localCamera.rotation,
+              new BABYLON.Vector3(userPresence.data!.cameraPosition._x, userPresence.data!.cameraPosition._y, userPresence.data!.cameraPosition._z), 0);
+          }
+        }
+      }
+    });
+    takeControl = container!.initialObjects.takeControl as LiveState;
+    takeControl.on("stateChanged", (status, local) => {
+      if (!local) {
+        takeCamControlButton.disabled = status;
+        remoteControlled = status;
+
+        let localCamera = scene.activeCamera as BABYLON.ArcRotateCamera;
+        // Someone is now taking control your camera
+        if (remoteControlled) {
+          currentCameraPosition = localCamera.position.clone();
+          currentCameraRotation = localCamera.rotation.clone();
+          // Removing input focus from the canvas to avoid moving the camera
+          localCamera.detachControl();
+        }
+        else {
+          localCamera.position = currentCameraPosition;
+          localCamera.rotation = currentCameraRotation;
+          // Re-attaching input focus to the canvas to allow moving the camera
+          localCamera.attachControl();
+        }
+      }
+    });
+    (async () => await takeControl.initialize(false))();
+    (async () => await presence.initialize())();
+    lastTime = new Date().getTime();
+  }
 
   const onRender = (scene: BABYLON.Scene) => {
   };
@@ -110,7 +170,7 @@ export const StageView = (): JSX.Element => {
 
     pointerDragBehavior.onDragObservable.add((event) => {
       // propagete the position change to other clients
-      PropagateChanes(
+      meshSharedMap.set(
         `${SyncActionType.Drag}_${currentMesh!.name}`,
         new DragInfo(currentMesh!.name, currentMesh!.position.x, currentMesh!.position.z)
       );
@@ -129,7 +189,7 @@ export const StageView = (): JSX.Element => {
         return true;
       });
       // propagete the position change to other clients
-      PropagateChanes(
+      meshSharedMap.set(
         `${SyncActionType.Drag}_${currentMesh!.name}`,
         new DragInfo(currentMesh!.name, currentMesh!.position.x, currentMesh!.position.z),
       );
@@ -202,12 +262,6 @@ export const StageView = (): JSX.Element => {
     }
   }
 
-  // Propagate changes to other clients if in Teams.
-  function PropagateChanes(key: string, value: any) {
-    // if (!inTeams) return;
-    meshSharedMap.set(key, value);
-  }
-
   // Add Babylon GUI controls.
   function AddUIControl(scene: BABYLON.Scene) {
     const advancedTexture = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
@@ -226,12 +280,12 @@ export const StageView = (): JSX.Element => {
       );
 
       await CreateMeshAndUpateRepoAsync(scene, newMesh);
-      PropagateChanes(`${SyncActionType.Add}_${newMesh.name}`, newMesh);
+      meshSharedMap.set(`${SyncActionType.Add}_${newMesh.name}`, newMesh);
     });
 
     // Add chair button
-    const addChiarButton = CreateButton("addChiarButton", "Add Chair", "100px", "20px", true, { top: "30px", left: "10px" });
-    addChiarButton.onPointerClickObservable.add(async () => {
+    const addChairButton = CreateButton("addChairButton", "Add Chair", "100px", "20px", true, { top: "30px", left: "10px" });
+    addChairButton.onPointerClickObservable.add(async () => {
       let name = uuid();
       let newMesh = new MeshData(
         name,
@@ -242,7 +296,7 @@ export const StageView = (): JSX.Element => {
         "This is chair-" + name
       );
       await CreateMeshAndUpateRepoAsync(scene, newMesh);
-      PropagateChanes(`${SyncActionType.Add}_${newMesh.name}`, newMesh);
+      meshSharedMap.set(`${SyncActionType.Add}_${newMesh.name}`, newMesh);
     });
 
     // Remove All Button
@@ -251,7 +305,7 @@ export const StageView = (): JSX.Element => {
       removeButton.isVisible = memoButton.isVisible = closeMemoButton.isVisible = memoInput.isVisible = false;
       meshDataList.forEach((meshData: MeshData) => {
         scene.getMeshByName(meshData.name)?.dispose();
-        PropagateChanes(`${SyncActionType.Remove}_${meshData.name}`, meshData.name);
+        meshSharedMap.set(`${SyncActionType.Remove}_${meshData.name}`, meshData.name);
       });
       meshDataList = [];
       repository.setData("meshes", meshDataList);
@@ -266,7 +320,7 @@ export const StageView = (): JSX.Element => {
         if (mesh.name === currentMesh!.name) {
           meshDataList.splice(index, 1);
           repository.setData("meshes", meshDataList);
-          PropagateChanes(`${SyncActionType.Remove}_${mesh.name}`, mesh.name);
+          meshSharedMap.set(`${SyncActionType.Remove}_${mesh.name}`, mesh.name);
           return true;
         }
         return true;
@@ -288,7 +342,7 @@ export const StageView = (): JSX.Element => {
       if (meshData !== undefined && meshData.name !== currentMesh!.name) {
         meshData.memo = value.text;
         repository.setData("meshes", meshDataList);
-        PropagateChanes(`${SyncActionType.UpdateMemo}_${meshData.name}`, {
+        meshSharedMap.set(`${SyncActionType.UpdateMemo}_${meshData.name}`, {
           name: meshData.name,
           memo: value.text,
         });
@@ -296,7 +350,7 @@ export const StageView = (): JSX.Element => {
     });
 
     advancedTexture.addControl(addTableButton);
-    advancedTexture.addControl(addChiarButton);
+    advancedTexture.addControl(addChairButton);
     advancedTexture.addControl(removeAllButton);
     advancedTexture.addControl(removeButton);
     advancedTexture.addControl(memoButton);
@@ -382,7 +436,7 @@ export const StageView = (): JSX.Element => {
   }
 
   // Setup mouse wheel behavior for camera and the selected mesh.
-  function SetupMouseWheelBehavior(scene: BABYLON.Scene) {
+  function SetupMouseWheelBehavior() {
     window.addEventListener("wheel", (event) => {
       if (currentMesh !== null) {
         let delta = Math.sign(event.deltaY);
@@ -393,12 +447,42 @@ export const StageView = (): JSX.Element => {
           meshData.rotation.y = currentMesh!.rotation.y;
           repository.setData("meshes", meshDataList);
         }
-        PropagateChanes(`${SyncActionType.Rotate}_${currentMesh!.name}`, {
-          name: currentMesh!.name,
-          y: currentMesh!.rotation.y,
-        });
+        meshSharedMap.set(
+          `${SyncActionType.Rotate}_${currentMesh!.name}`,
+          new RotateInfo(currentMesh!.name, currentMesh!.rotation.y,)
+        );
       }
     });
+  }
+
+  // Use presence to share camera location info
+  function initializePresenceLogic(scene: BABYLON.Scene) {
+    let localCamera = scene.activeCamera as BABYLON.ArcRotateCamera;
+    // Babylon.js event sent everytime the view matrix is changed
+    // Useful to know either a position, a rotation or
+    // both have been updated
+    localCamera.onViewMatrixChangedObservable.add(async () => {
+      // sending new camera position & rotation updates every 100 ms
+      // to avoid sending too frequent updates over the network
+      if (!remoteControlled && new Date().getTime() - lastTime >= updateFrequencies && presence.isInitialized) {
+        let data: ICameraControlInfo = {
+          cameraPosition: localCamera.position,
+          cameraRotation: localCamera.rotation,
+        };
+        await presence.update(data);
+        lastTime = new Date().getTime();
+      }
+    });
+
+  }
+
+  function InitializeCameraControl() {
+    takeCamControlButton = document.getElementById("takeCamControl") as HTMLButtonElement;
+    takeCamControlButton.onclick = () => {
+      takingControl = !takingControl;
+      takeControl.set(takingControl);
+      takeCamControlButton.innerHTML = takingControl ? "Release Camera Control" : "Take Camera Control";
+    };
   }
 
   return (
@@ -411,6 +495,9 @@ export const StageView = (): JSX.Element => {
             onRender={onRender}
             id="my-canvas"
           />
+          <div id="controlButtons">
+            <button id="takeCamControl">Take Camera Control</button>
+          </div>
         </div>
       ) : (
         <div></div>
