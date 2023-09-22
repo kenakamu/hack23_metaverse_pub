@@ -11,12 +11,11 @@ function App() {
   const initializeStartedRef = useRef(false);
 
   useEffect(() => {
-    if (!inTeams) return;
-    if (initializeStartedRef.current) return;
+    if (!inTeams || initializeStartedRef.current) return;
     initializeStartedRef.current = true;
     const initialize = async () => {
       try {
-        console.log("App.js: initializing client SDK initialized");
+        console.log("App.tsx: initializing client SDK initialized");
         await app.initialize();
         app.notifyAppLoaded();
         app.notifySuccess();
@@ -24,7 +23,7 @@ function App() {
         console.error(error);
       }
     };
-    console.log("App.js: initializing client SDK");
+    console.log("App.tsx: initializing client SDK");
     initialize();
   });
   const params = new URLSearchParams(window.location.search);

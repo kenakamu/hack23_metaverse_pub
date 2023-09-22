@@ -1,12 +1,12 @@
 import "../App.css";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { v4 as uuid } from "uuid";
 import * as GUI from "@babylonjs/gui/2D";
 import * as BABYLON from "@babylonjs/core";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
 import SceneComponent from "babylonjs-hook";
 import { LiveShareHost, app } from "@microsoft/teams-js";
-import { ILiveShareJoinResults, LiveShareClient } from "@microsoft/live-share";
+import { ILiveShareJoinResults, LiveShareClient, TestLiveShareHost } from "@microsoft/live-share";
 import { ContainerSchema, IFluidContainer, IValueChanged, SharedMap, } from "fluid-framework";
 import { IRepositoryService, LocalStorageRepositoryService, } from "../services/RepositoryService";
 import { CreateStage, CreateButton, CreateInput } from "../services/BabylonHelper";
@@ -24,7 +24,7 @@ export const StageView = (): JSX.Element => {
       meshSharedMap: SharedMap
     },
   };
-
+  const initializeStartedRef = useRef(false);
   const repository: IRepositoryService = new LocalStorageRepositoryService();
   let meshDataList: MeshData[] = []; // Store mesh data for the repository
   let camera: BABYLON.ArcRotateCamera;
@@ -38,23 +38,30 @@ export const StageView = (): JSX.Element => {
   let memoInput: GUI.InputText;
   let meshSharedMap: SharedMap;
 
-  // Initialize Teams app if in teams.
   useEffect(() => {
-    if (!inTeams) return;
-
-    (async () => {
-      await app.initialize();
-    })().then(() => {
-      app.notifyAppLoaded();
-      app.notifySuccess();
-      const host = LiveShareHost.create();
+    if (initializeStartedRef.current) return;
+    initializeStartedRef.current = true;
+    const initialize = async () => {
+      try {
+        console.log("StageView.tsx: initializing client SDK initialized");
+        await app.initialize();
+        app.notifyAppLoaded();
+        app.notifySuccess();
+      } catch (error) {
+        console.error(error);
+      }
+    };
+    
+    const joinContainer = async () => {
+      const host = inTeams ? LiveShareHost.create() : TestLiveShareHost.create();
       const client = new LiveShareClient(host);
-      (async () => {
-        return await client.joinContainer(containerSchema);
-      })().then((item: ILiveShareJoinResults) => {
-        setContainer(item.container);
-      });
-    });
+      let item: ILiveShareJoinResults = await client.joinContainer(containerSchema);
+      setContainer(item.container);
+    }
+
+    console.log("StageView.tsx: initializing client SDK");
+    if (inTeams) initialize();
+    joinContainer();
   });
 
   const onSceneReady = (scene: BABYLON.Scene) => {
@@ -75,14 +82,14 @@ export const StageView = (): JSX.Element => {
     SetupMouseWheelBehavior(scene);
 
     // setup meshSharedMap to synchronize between clients if in Teams.
-    if (inTeams) {
-      meshSharedMap = container!.initialObjects.meshSharedMap as SharedMap;
-      meshSharedMap.on("valueChanged", (changed: IValueChanged, local: boolean) => {
-        if (!local) {
-          SyncMesh(scene, changed, meshSharedMap);
-        }
-      });
-    }
+    // if (inTeams) {
+    meshSharedMap = container!.initialObjects.meshSharedMap as SharedMap;
+    meshSharedMap.on("valueChanged", (changed: IValueChanged, local: boolean) => {
+      if (!local) {
+        SyncMesh(scene, changed, meshSharedMap);
+      }
+    });
+    // }
   };
 
   const onRender = (scene: BABYLON.Scene) => {
@@ -197,7 +204,7 @@ export const StageView = (): JSX.Element => {
 
   // Propagate changes to other clients if in Teams.
   function PropagateChanes(key: string, value: any) {
-    if (!inTeams) return;
+    // if (!inTeams) return;
     meshSharedMap.set(key, value);
   }
 
@@ -396,7 +403,7 @@ export const StageView = (): JSX.Element => {
 
   return (
     <div className="App">
-      {(inTeams && container) || !inTeams ? (
+      {container ? (
         <div>
           <SceneComponent
             antialias
