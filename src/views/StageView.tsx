@@ -1,46 +1,37 @@
 import "../App.css";
+import { useEffect, useState, useRef } from "react";
 import { v4 as uuid } from "uuid";
 import * as GUI from "@babylonjs/gui/2D";
 import * as BABYLON from "@babylonjs/core";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
 import SceneComponent from "babylonjs-hook";
-import { MeshData } from "../models/MeshData";
-import {
-  IRepositoryService,
-  LocalStorageRepositoryService,
-} from "../services/RepositoryService";
-import { LiveShareClient } from "@microsoft/live-share";
 import { LiveShareHost, app } from "@microsoft/teams-js";
-import { useEffect, useState } from "react";
-import {
-  ContainerSchema,
-  IFluidContainer,
-  IValueChanged,
-  SharedMap,
-} from "fluid-framework";
-import { LiveCanvas } from "@microsoft/live-share-canvas";
-import { CreateButton } from "../services/GUIService";
+import { ILiveShareJoinResults, LiveShareClient, TestLiveShareHost } from "@microsoft/live-share";
+import { ContainerSchema, IFluidContainer, IValueChanged, SharedMap, } from "fluid-framework";
+import { IRepositoryService, LocalStorageRepositoryService, } from "../services/RepositoryService";
+import { CreateStage, CreateButton, CreateInput } from "../services/BabylonHelper";
+import { MeshData } from "../models/MeshData";
+import { DragInfo, RotateInfo, SyncActionType } from "../models/SyncInfo";
 import { Inspector } from "@babylonjs/inspector";
 
-// ... YOUR SCENE CREATION
+const glbImageSource: string = "https://raw.githubusercontent.com/kenakamu/hack23_metaverse_pub/main/src/data/";
+const inTeams = new URL(window.location.href).searchParams.get("inTeams") === "1";
+
 export const StageView = (): JSX.Element => {
   const [container, setContainer] = useState<IFluidContainer>();
   const containerSchema: ContainerSchema = {
     initialObjects: {
-      liveCanvas: LiveCanvas,
-      meshSharedMap: SharedMap,
-      objName: SharedMap,
-      cameraObj: SharedMap,
+      meshSharedMap: SharedMap
     },
   };
-
+  const initializeStartedRef = useRef(false);
   const repository: IRepositoryService = new LocalStorageRepositoryService();
-  let meshDataList: MeshData[] = []; // keep the partial mesh data in the memory.
-  let ground: BABYLON.GroundMesh;
+  let meshDataList: MeshData[] = []; // Store mesh data for the repository
   let camera: BABYLON.ArcRotateCamera;
-  let hl: BABYLON.HighlightLayer;
+  let highlight: BABYLON.HighlightLayer;
+  let ground: BABYLON.GroundMesh;
   let canvas: BABYLON.Nullable<HTMLCanvasElement>;
-  let currentMesh: BABYLON.Nullable<BABYLON.AbstractMesh> = null; // selected mesh
+  let currentMesh: BABYLON.Nullable<BABYLON.AbstractMesh> = null;
   let removeButton: GUI.Button;
   let memoButton: GUI.Button;
   let closeMemoButton: GUI.Button;
@@ -48,124 +39,83 @@ export const StageView = (): JSX.Element => {
   let meshSharedMap: SharedMap;
 
   useEffect(() => {
-    const initTeams = async () => {
-      await app.initialize();
-      app.notifySuccess();
+    if (initializeStartedRef.current) return;
+    initializeStartedRef.current = true;
+    const initialize = async () => {
+      try {
+        await app.initialize();
+        app.notifyAppLoaded();
+        app.notifySuccess();
+        console.log("StageView.tsx: initializing client SDK initialized");
+      } catch (error) {
+        console.error(error);
+      }
     };
-    initTeams().then((item) => {
-      const host = LiveShareHost.create();
+    
+    const joinContainer = async () => {
+      const host = inTeams ? LiveShareHost.create() : TestLiveShareHost.create();
       const client = new LiveShareClient(host);
-      const getContainer = async () => {
-        return await client.joinContainer(containerSchema);
-      };
-      getContainer().then((item) => {
-        setContainer(item.container);
-      });
-    });
+      let item: ILiveShareJoinResults = await client.joinContainer(containerSchema);
+      setContainer(item.container);
+    }
+
+    console.log("StageView.tsx: initializing client SDK");
+    if (inTeams) initialize().then(() => joinContainer());
+    else joinContainer();
   });
 
   const onSceneReady = (scene: BABYLON.Scene) => {
-    // Setup SharedMap change event.
+    // Uncomment the following to show the BabylonJS Inspector.
+    //Inspector.Show(scene, {});
+
+    const stage = CreateStage(scene);
+    highlight = stage.highlight;
+    camera = stage.camera;
+    ground = stage.ground;
+    canvas = stage.canvas;
+
+    if (meshDataList.length === 0) meshDataList = repository.getData("meshes");
+    meshDataList?.map((meshData: MeshData) => CreateMeshAsync(scene, meshData));
+
+    AddUIControl(scene);
+    SetupPointerBehavior(scene);
+    SetupMouseWheelBehavior(scene);
+
+    // setup meshSharedMap to synchronize between clients if in Teams.
+    // if (inTeams) {
     meshSharedMap = container!.initialObjects.meshSharedMap as SharedMap;
-    meshSharedMap.on("valueChanged", (changed, local) => {
+    meshSharedMap.on("valueChanged", (changed: IValueChanged, local: boolean) => {
       if (!local) {
         SyncMesh(scene, changed, meshSharedMap);
       }
     });
-    // Uncomment the following to show the BabylonJS Inspector.
-    //Inspector.Show(scene, {});
-
-    hl = new BABYLON.HighlightLayer("hl1", scene); // Create Highlight Layer to show which mesh is selected.
-    camera = new BABYLON.ArcRotateCamera(
-      "camera1",
-      Math.PI / 2,
-      Math.PI / 3,
-      20,
-      BABYLON.Vector3.Zero(),
-      scene
-    );
-    camera.wheelPrecision = 50;
-    canvas = scene.getEngine().getRenderingCanvas();
-    camera.attachControl(canvas, true);
-    const light = new BABYLON.HemisphericLight(
-      "light",
-      new BABYLON.Vector3(0, 1, 0),
-      scene
-    );
-    light.intensity = 0.7;
-    ground = BABYLON.MeshBuilder.CreateGround(
-      "ground",
-      { width: 20, height: 20 },
-      scene
-    );
-    // load the initial data if not yet.
-    if (meshDataList.length === 0) {
-      meshDataList = repository.getData("meshes");
-    }
-
-    // Load the meshes to the scene
-    meshDataList?.map((meshData: MeshData) => {
-      return CreateMeshAsync(scene, meshData);
-    });
-    // Adding buttons to the scene
-    AddUIControl(scene);
-    // Setup mouse control behaviors
-    SetupPointerBehavior(scene);
-    SetupMouseWheelBehavior(scene);
+    // }
   };
 
-  const onRender = (scene: BABYLON.Scene) => {};
+  const onRender = (scene: BABYLON.Scene) => {
+  };
 
   // Create a mesh and update list and repository data.
-  async function CreateMeshAndUpateRepoAsync(
-    scene: BABYLON.Scene,
-    meshData: MeshData
-  ) {
-    await CreateMeshAsync(scene, meshData);
-    // After creating a mesh, update the list and repository data.
+  async function CreateMeshAndUpateRepoAsync(scene: BABYLON.Scene, meshData: MeshData) {
+    await CreateMeshAsync(scene, meshData)
     meshDataList.push(meshData);
     repository.setData("meshes", meshDataList);
   }
 
-  // Create a mesh from the glb file and the initial values
-  async function CreateMeshAsync(scene: BABYLON.Scene, meshData: MeshData) {
-    // Getting the mesh from the glb file and take the second mesh as it's model.
-    // This may vary depending on the model types.
-    let mesh = (
-      await BABYLON.SceneLoader.ImportMeshAsync(
-        "",
-        "https://raw.githubusercontent.com/kenakamu/hack23_metaverse_pub/main/src/data/",
-        `${meshData.type}.glb`,
-        scene,
-        (meshes) => {}
-      )
-    ).meshes[1];
-    mesh.parent = null;
-    // Set mesh name, inital location and rotation.
-    mesh.scaling = new BABYLON.Vector3(
-      meshData.scale.x,
-      meshData.scale.y,
-      meshData.scale.z
-    );
-    mesh.rotate(BABYLON.Axis.Y, meshData.rotation.y, BABYLON.Space.WORLD);
-    mesh.position = new BABYLON.Vector3(
-      meshData.position.x,
-      meshData.position.y,
-      meshData.position.z
-    );
-    mesh.name = meshData.name;
-
-    let pointerDragBehavior = new BABYLON.PointerDragBehavior({
+  // Create a pointer drag behavior for the mesh.
+  function GetPointerBehavior(): BABYLON.PointerDragBehavior {
+    const pointerDragBehavior = new BABYLON.PointerDragBehavior({
       dragPlaneNormal: new BABYLON.Vector3(0, 1, 0), // meshes should be draggable for X and Z axies only.
     });
+
     pointerDragBehavior.onDragObservable.add((event) => {
       // propagete the position change to other clients
-      meshSharedMap.set(`move_${currentMesh!.name}`, {
-        name: currentMesh!.name,
-        x: currentMesh!.position.x,
-        z: currentMesh!.position.z,
-      });
+      PropagateChanes(
+        `${SyncActionType.Drag}_${currentMesh!.name}`,
+        new DragInfo(currentMesh!.name, currentMesh!.position.x, currentMesh!.position.z)
+      );
     });
+
     pointerDragBehavior.onDragEndObservable.add((event) => {
       // When the drag ends, we save it's location.
       meshDataList.some((mesh: MeshData) => {
@@ -176,91 +126,95 @@ export const StageView = (): JSX.Element => {
           repository.setData("meshes", meshDataList);
           return true;
         }
+        return true;
       });
       // propagete the position change to other clients
-      meshSharedMap.set(`move_${currentMesh!.name}`, {
-        name: currentMesh!.name,
-        x: currentMesh!.position.x,
-        z: currentMesh!.position.z,
-      });
+      PropagateChanes(
+        `${SyncActionType.Drag}_${currentMesh!.name}`,
+        new DragInfo(currentMesh!.name, currentMesh!.position.x, currentMesh!.position.z),
+      );
     });
+    return pointerDragBehavior;
+  }
 
-    mesh.addBehavior(pointerDragBehavior);
+  // Create a mesh from the glb file and the initial values
+  async function CreateMeshAsync(scene: BABYLON.Scene, meshData: MeshData) {
+    // Getting the mesh from the glb file and take the second mesh as it's model (the first one is __root__)
+    let mesh = (await BABYLON.SceneLoader.ImportMeshAsync("", glbImageSource, `${meshData.type}.glb`, scene)).meshes[1];
+    mesh.name = meshData.name;
+    mesh.parent = null;
+    mesh.scaling = new BABYLON.Vector3(meshData.scale.x, meshData.scale.y, meshData.scale.z);
+    mesh.position = new BABYLON.Vector3(meshData.position.x, meshData.position.y, meshData.position.z);
+    mesh.reIntegrateRotationIntoRotationQuaternion = true;  // rotationQuaternion is by default for glb
+    mesh.rotate(BABYLON.Axis.Y, meshData.rotation.y, BABYLON.Space.WORLD);
+    mesh.rotation = mesh.rotationQuaternion!.toEulerAngles(); // Assign current rotation.
+    mesh.addBehavior(GetPointerBehavior());
 
     return mesh;
   }
 
+  // Sync mesh data between clients if in Teams.
   function SyncMesh(
     scene: BABYLON.Scene,
     changed: IValueChanged,
     meshSharedMap: SharedMap
   ) {
-    if (changed.key.startsWith("add")) {
-      CreateMeshAndUpateRepoAsync(
-        scene,
-        meshSharedMap.get(changed.key) as MeshData
-      );
-    } else if (changed.key.startsWith("remove")) {
+    // Sync mesh action between clients.
+    if (changed.key.startsWith(SyncActionType.Add.toString())) {
+      CreateMeshAndUpateRepoAsync(scene, meshSharedMap.get(changed.key) as MeshData);
+    } else if (changed.key.startsWith(SyncActionType.Remove.toString())) {
       meshDataList.some((mesh: any, index: number) => {
         if (mesh.name === (meshSharedMap.get(changed.key) as string)) {
           meshDataList.splice(index, 1);
           repository.setData("meshes", meshDataList);
-          let removedMesh = scene.getMeshByName(
-            meshSharedMap.get(changed.key) as string
-          );
-          removedMesh?.dispose();
-          if (currentMesh && removedMesh!.name === currentMesh.name) {
-            removeButton.isVisible =
-              memoButton.isVisible =
-              closeMemoButton.isVisible =
-              memoInput.isVisible =
-                false;
+          let removedMesh = scene.getMeshByName(meshSharedMap.get(changed.key) as string);
+          if (removedMesh !== null) {
+            removedMesh.dispose();
+            if (currentMesh && removedMesh.name === currentMesh.name) {
+              removeButton.isVisible = memoButton.isVisible = closeMemoButton.isVisible = memoInput.isVisible = false;
+            }
           }
           return true;
         }
+        return true;
       });
-    } else if (changed.key.startsWith("memo")) {
-      let meshData = meshDataList.find(
-        (meshData: MeshData) =>
-          meshSharedMap.get(changed.key).name === meshData.name
-      );
-      meshData!.memo = meshSharedMap.get(changed.key).memo;
-    } else if (changed.key.startsWith("move")) {
-      let meshData = meshDataList.find(
-        (meshData: MeshData) =>
-          meshSharedMap.get(changed.key).name === meshData.name
-      );
-      meshData!.position.x = meshSharedMap.get(changed.key).x;
-      meshData!.position.z = meshSharedMap.get(changed.key).z;
+    } else if (changed.key.startsWith(SyncActionType.UpdateMemo.toString())) {
+      let meshData = meshDataList.find((meshData: MeshData) => meshSharedMap.get(changed.key).name === meshData.name);
+      if (meshData !== undefined) meshData!.memo = meshSharedMap.get(changed.key).memo;
+    } else if (changed.key.startsWith(SyncActionType.Drag.toString())) {
+      let dragLocation: DragInfo = meshSharedMap.get(changed.key) as DragInfo;
+      let meshData = meshDataList.find((meshData: MeshData) => meshSharedMap.get(changed.key).name === meshData.name);
+      if (meshData !== undefined) {
+        meshData!.position.x = dragLocation.x;
+        meshData!.position.z = dragLocation.z;
+      }
       let mesh = scene.getMeshByName(meshSharedMap.get(changed.key).name);
-      mesh!.position.x = meshSharedMap.get(changed.key).x;
-      mesh!.position.z = meshSharedMap.get(changed.key).z;
-    } else if (changed.key.startsWith("rotate")) {
-      console.log(
-        "rotateevent",
-        meshSharedMap.get(changed.key).name,
-        ",",
-        meshSharedMap.get(changed.key).y
-      );
-      let meshData = meshDataList.find(
-        (meshData: MeshData) =>
-          meshSharedMap.get(changed.key).name === meshData.name
-      );
-      meshData!.rotation.y = meshSharedMap.get(changed.key).y;
+      if (mesh !== null) {
+        mesh!.position.x = dragLocation.x;
+        mesh!.position.z = dragLocation.z;
+      }
+    } else if (changed.key.startsWith(SyncActionType.Rotate.toString())) {
+      let rotateInfo: RotateInfo = meshSharedMap.get(changed.key) as RotateInfo;
+      let meshData = meshDataList.find((meshData: MeshData) => meshSharedMap.get(changed.key).name === meshData.name);
+      if (meshData !== undefined) meshData!.rotation.y = rotateInfo.y;
       let mesh = scene.getMeshByName(meshSharedMap.get(changed.key).name);
-      mesh!.rotation.y = meshSharedMap.get(changed.key).y;
+      if (mesh !== null) mesh!.rotation.y = rotateInfo.y;
     }
   }
 
-  // Add buttons.
+  // Propagate changes to other clients if in Teams.
+  function PropagateChanes(key: string, value: any) {
+    // if (!inTeams) return;
+    meshSharedMap.set(key, value);
+  }
+
+  // Add Babylon GUI controls.
   function AddUIControl(scene: BABYLON.Scene) {
     const advancedTexture = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
+
     // Add table button
-    const addTableButton = CreateButton("addTableButton", "Add Table", {
-      top: 10,
-      left: 10,
-    });
-    addTableButton.onPointerClickObservable.add(() => {
+    const addTableButton = CreateButton("addTableButton", "Add Table", "100px", "20px", true, { top: "10px", left: "10px" });
+    addTableButton.onPointerClickObservable.add(async () => {
       let name = uuid();
       let newMesh = new MeshData(
         name,
@@ -271,18 +225,13 @@ export const StageView = (): JSX.Element => {
         "This is table-" + name
       );
 
-      // After creating a mesh, update the list and repository data.
-      CreateMeshAndUpateRepoAsync(scene, newMesh);
-      // propagate the change to other clients
-      meshSharedMap.set(`add_${newMesh.name}`, newMesh);
+      await CreateMeshAndUpateRepoAsync(scene, newMesh);
+      PropagateChanes(`${SyncActionType.Add}_${newMesh.name}`, newMesh);
     });
 
     // Add chair button
-    const addChiarButton = CreateButton("addChiarButton", "Add Chair", {
-      top: 30,
-      left: 10,
-    });
-    addChiarButton.onPointerClickObservable.add(() => {
+    const addChiarButton = CreateButton("addChiarButton", "Add Chair", "100px", "20px", true, { top: "30px", left: "10px" });
+    addChiarButton.onPointerClickObservable.add(async () => {
       let name = uuid();
       let newMesh = new MeshData(
         name,
@@ -292,74 +241,63 @@ export const StageView = (): JSX.Element => {
         { x: 0, y: 0, z: 0 }, // rotation
         "This is chair-" + name
       );
-      // After creating a mesh, update the list and repository data.
-      CreateMeshAndUpateRepoAsync(scene, newMesh);
-      // propagate the change to other clients
-      meshSharedMap.set(`add_${newMesh.name}`, newMesh);
+      await CreateMeshAndUpateRepoAsync(scene, newMesh);
+      PropagateChanes(`${SyncActionType.Add}_${newMesh.name}`, newMesh);
+    });
+
+    // Remove All Button
+    const removeAllButton = CreateButton("removeAllButton", "Remove All", "100px", "20px", true, { top: "50px", left: "10px" });
+    removeAllButton.onPointerClickObservable.add(async () => {
+      removeButton.isVisible = memoButton.isVisible = closeMemoButton.isVisible = memoInput.isVisible = false;
+      meshDataList.forEach((meshData: MeshData) => {
+        scene.getMeshByName(meshData.name)?.dispose();
+        PropagateChanes(`${SyncActionType.Remove}_${meshData.name}`, meshData.name);
+      });
+      meshDataList = [];
+      repository.setData("meshes", meshDataList);
     });
 
     // Remove Button
-    removeButton = CreateButton("removeButton", "Remove");
-    removeButton.width = "50px";
-    removeButton.isVisible = false;
+    removeButton = CreateButton("removeButton", "Remove", "50px", "20px", false, null, { x: 50, y: -20 });
     removeButton.onPointerClickObservable.add(() => {
       currentMesh?.dispose();
-      removeButton.isVisible =
-        memoButton.isVisible =
-        closeMemoButton.isVisible =
-        memoInput.isVisible =
-          false;
+      removeButton.isVisible = memoButton.isVisible = closeMemoButton.isVisible = memoInput.isVisible = false;
       meshDataList.some((mesh: any, index: number) => {
         if (mesh.name === currentMesh!.name) {
-          meshSharedMap.set(`remove_${mesh.name}`, mesh.name);
           meshDataList.splice(index, 1);
           repository.setData("meshes", meshDataList);
+          PropagateChanes(`${SyncActionType.Remove}_${mesh.name}`, mesh.name);
           return true;
         }
+        return true;
       });
     });
 
     // Create Memo Buttom
-    memoButton = CreateButton("memoButton", "Memo");
-    memoButton.width = "50px";
-    memoButton.isVisible = false;
-    memoButton.onPointerClickObservable.add(() => {
-      memoInput.isVisible = true;
-      closeMemoButton.isVisible = true;
-    });
+    memoButton = CreateButton("memoButton", "Memo", "50px", "20px", false, null, { x: 50, y: 0 });
+    memoButton.onPointerClickObservable.add(() => memoInput.isVisible = closeMemoButton.isVisible = true);
 
     // Create Memo Buttom
-    closeMemoButton = CreateButton("closeMemoButton", "Close");
-    closeMemoButton.width = "50px";
-    closeMemoButton.isVisible = false;
-    closeMemoButton.onPointerClickObservable.add(() => {
-      memoInput.isVisible = false;
-      closeMemoButton.isVisible = false;
-    });
+    closeMemoButton = CreateButton("closeMemoButton", "Close", "50px", "20px", false, null, { x: 50, y: 0 });
+    closeMemoButton.onPointerClickObservable.add(() => memoInput.isVisible = closeMemoButton.isVisible = false);
 
     // Memo Input Text Field
-    memoInput = new GUI.InputTextArea();
-    memoInput.width = "200px";
-    memoInput.height = "80%";
-    memoInput.isVisible = false;
-    memoInput.background = "lightgray";
-    memoInput.focusedBackground = "white";
-    memoInput.color = "black";
+    memoInput = CreateInput();
     memoInput.onBlurObservable.add((value) => {
-      meshDataList.some((mesh: any) => {
-        if (mesh.name === currentMesh!.name) {
-          mesh.memo = value.text;
-          repository.setData("meshes", meshDataList);
-          meshSharedMap.set(`memo_${mesh.name}`, {
-            name: mesh.name,
-            memo: value.text,
-          });
-          return true;
-        }
-      });
+      let meshData = meshDataList.find((meshData: MeshData) => meshData.name === currentMesh!.name);
+      if (meshData !== undefined && meshData.name !== currentMesh!.name) {
+        meshData.memo = value.text;
+        repository.setData("meshes", meshDataList);
+        PropagateChanes(`${SyncActionType.UpdateMemo}_${meshData.name}`, {
+          name: meshData.name,
+          memo: value.text,
+        });
+      }
     });
+
     advancedTexture.addControl(addTableButton);
     advancedTexture.addControl(addChiarButton);
+    advancedTexture.addControl(removeAllButton);
     advancedTexture.addControl(removeButton);
     advancedTexture.addControl(memoButton);
     advancedTexture.addControl(closeMemoButton);
@@ -369,44 +307,27 @@ export const StageView = (): JSX.Element => {
   // Setup mouse control behaviors when selecting a mesh or ground.
   function SetupPointerBehavior(scene: BABYLON.Scene) {
     let startingPoint: BABYLON.Nullable<BABYLON.Vector3>;
-    let getGroundPosition = () => {
-      let pickinfo = scene.pick(scene.pointerX, scene.pointerY, (mesh) => {
-        return mesh === ground;
-      });
-      if (pickinfo.hit) {
-        return pickinfo.pickedPoint;
-      }
 
+    let getGroundPosition = () => {
+      let pickinfo = scene.pick(scene.pointerX, scene.pointerY, (mesh) => mesh === ground);
+      if (pickinfo.hit) return pickinfo.pickedPoint;
       return null;
     };
 
-    // When selecting a mesh.
     let pointerDownOnMesh = (mesh: BABYLON.Nullable<BABYLON.AbstractMesh>) => {
+      // When selecting a mesh, remove the mouse wheel behavior from the camera.
       camera.inputs.removeByType("ArcRotateCameraMouseWheelInput");
-      hl.removeAllMeshes();
-      hl.addMesh(mesh as BABYLON.Mesh, BABYLON.Color3.Green());
+      highlight.removeAllMeshes();
+      highlight.addMesh(mesh as BABYLON.Mesh, BABYLON.Color3.Green());
       currentMesh = mesh;
       removeButton.linkWithMesh(currentMesh as BABYLON.Mesh);
-      removeButton.linkOffsetX = 50;
-      removeButton.linkOffsetY = -20;
-      removeButton.isVisible = true;
       memoButton.linkWithMesh(currentMesh as BABYLON.Mesh);
-      memoButton.linkOffsetX = 50;
-      memoButton.linkOffsetY = 0;
-      memoButton.isVisible = true;
       closeMemoButton.linkWithMesh(currentMesh as BABYLON.Mesh);
-      closeMemoButton.linkOffsetX = 50;
-      closeMemoButton.linkOffsetY = 0;
-      closeMemoButton.isVisible = false;
       memoInput.linkWithMesh(currentMesh as BABYLON.Mesh);
-      memoInput.linkOffsetX = 200;
-      memoInput.isVisible = false;
-      meshDataList.some((mesh: any) => {
-        if (mesh.name === currentMesh!.name) {
-          memoInput.text = mesh.memo;
-          return true;
-        }
-      });
+      removeButton.isVisible = memoButton.isVisible = true;
+      memoInput.isVisible = closeMemoButton.isVisible = false;
+      let meshData = meshDataList.find((meshData: MeshData) => meshData.name === currentMesh!.name);
+      if (meshData !== undefined) memoInput.text = meshData.memo;
 
       startingPoint = getGroundPosition();
       if (startingPoint) {
@@ -418,13 +339,10 @@ export const StageView = (): JSX.Element => {
 
     // When selecting the ground.
     let pointerDownOnGround = () => {
-      hl.removeAllMeshes();
+      highlight.removeAllMeshes();
       currentMesh = null;
       camera.inputs.addMouseWheel();
-      removeButton.isVisible = false;
-      memoButton.isVisible = false;
-      closeMemoButton.isVisible = false;
-      memoInput.isVisible = false;
+      removeButton.isVisible = memoButton.isVisible = closeMemoButton.isVisible = memoInput.isVisible = false;
     };
 
     let pointerUp = () => {
@@ -436,14 +354,9 @@ export const StageView = (): JSX.Element => {
     };
 
     let pointerMove = () => {
-      if (!startingPoint) {
-        return;
-      }
+      if (!startingPoint) return;
       let current = getGroundPosition();
-      if (!current) {
-        return;
-      }
-
+      if (!current) return;
       let diff = current.subtract(startingPoint);
       currentMesh!.position.addInPlace(diff);
       startingPoint = current;
@@ -452,10 +365,7 @@ export const StageView = (): JSX.Element => {
     scene.onPointerObservable.add((pointerInfo: BABYLON.PointerInfo) => {
       switch (pointerInfo.type) {
         case BABYLON.PointerEventTypes.POINTERDOWN:
-          if (
-            pointerInfo.pickInfo!.hit &&
-            pointerInfo.pickInfo!.pickedMesh !== ground
-          ) {
+          if (pointerInfo.pickInfo!.hit && pointerInfo.pickInfo!.pickedMesh !== ground) {
             pointerDownOnMesh(pointerInfo.pickInfo!.pickedMesh);
           } else {
             pointerDownOnGround();
@@ -476,28 +386,17 @@ export const StageView = (): JSX.Element => {
     window.addEventListener("wheel", (event) => {
       if (currentMesh !== null) {
         let delta = Math.sign(event.deltaY);
-        //currentMesh.rotation.y += delta * 0.1;
-        currentMesh.reIntegrateRotationIntoRotationQuaternion = true;
-        (currentMesh as BABYLON.Mesh).rotate(
-          BABYLON.Axis.Y,
-          delta * 0.1,
-          BABYLON.Space.WORLD
-        );
-        // rotationQuaternion is by default for glb
+        (currentMesh as BABYLON.Mesh).rotate(BABYLON.Axis.Y, delta * 0.1, BABYLON.Space.WORLD);
         currentMesh.rotation = currentMesh.rotationQuaternion!.toEulerAngles();
-        meshDataList.some((mesh: any) => {
-          if (mesh.name === currentMesh!.name) {
-            mesh.rotation.y = currentMesh!.rotation.y;
-            repository.setData("meshes", meshDataList);
-            return true;
-          }
-        });
-        meshSharedMap.set(`rotate_${currentMesh!.name}`, {
+        let meshData = meshDataList.find((meshData: MeshData) => meshData.name === currentMesh!.name);
+        if (meshData !== undefined && meshData.name === currentMesh!.name) {
+          meshData.rotation.y = currentMesh!.rotation.y;
+          repository.setData("meshes", meshDataList);
+        }
+        PropagateChanes(`${SyncActionType.Rotate}_${currentMesh!.name}`, {
           name: currentMesh!.name,
           y: currentMesh!.rotation.y,
         });
-      } else {
-        camera.wheelPrecision = 50;
       }
     });
   }

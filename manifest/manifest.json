@@ -3,21 +3,21 @@
   "version": "1.0.1",
   "manifestVersion": "1.12",
   "id": "2cb324ac-a51c-4bf4-aef9-31453c2c64fd",
-  "packageName": "com.microsoft.teams.liveshareinking",
+  "packageName": "com.microsoft.teams.eventspacemanagement",
   "name": {
-    "short": "LiveShareInking",
-    "full": "Live Share Canvas demo"
+    "short": "Event Space Management",
+    "full": "Event Space Management demo"
   },
   "developer": {
-    "name": "Your name here",
+    "name": "Kitsune",
     "mpnId": "",
     "websiteUrl": "https://www.example.com",
     "privacyUrl": "https://www.example.com/PrivacyStatement",
     "termsOfUseUrl": "https://www.example.com/TermsOfUse"
   },
   "description": {
-    "short": "Live Share inking demo",
-    "full": "Collaborative inking demo powered by Live Share"
+    "short": "Event Space Management demo",
+    "full": "Collaborative metaverse demo powered by Live Share"
   },
   "icons": {
     "outline": "outline.png",
@@ -26,7 +26,7 @@
   "accentColor": "#FFFFFF",
   "configurableTabs": [
     {
-      "configurationUrl": "https://4aea-63-64-168-195.ngrok-free.app?view=config&inTeams=1",
+      "configurationUrl": "https://c5c8-126-114-243-250.ngrok-free.app?view=config&inTeams=1",
       "canUpdateConfiguration": false,
       "scopes": ["groupchat"],
       "context": ["meetingSidePanel", "meetingStage"]
