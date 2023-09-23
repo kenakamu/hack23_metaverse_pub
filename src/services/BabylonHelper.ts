@@ -22,6 +22,9 @@ export function CreateStage(scene: BABYLON.Scene): {
     { width: 20, height: 20 },
     scene
   );
+  const groundMat = new BABYLON.StandardMaterial("roofMat");
+  groundMat.diffuseTexture = new BABYLON.Texture("https://raw.githubusercontent.com/kenakamu/hack23_metaverse_pub/main/src/data/ground_materials.jpg", scene);
+  ground.material = groundMat;
   return { highlight, camera, ground, canvas };
 }
 
