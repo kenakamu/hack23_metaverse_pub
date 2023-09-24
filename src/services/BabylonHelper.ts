@@ -32,8 +32,8 @@ export function CreateStage(scene: BABYLON.Scene): {
 
 export async function ImportGlbAsync(glbFileName: string, scene: BABYLON.Scene): Promise<BABYLON.AbstractMesh> {
   // Getting the mesh from the glb file and take the second mesh as it's model (the first one is __root__)
-  let mesh = (await BABYLON.SceneLoader.ImportMeshAsync("", glbImageSource, glbFileName, scene)).meshes[1]
-  return mesh;
+  let importedGlb = await BABYLON.SceneLoader.ImportMeshAsync("", glbImageSource, glbFileName, scene);
+  return importedGlb.meshes[1];
 }
 
 export function CreateButton(

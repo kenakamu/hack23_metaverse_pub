@@ -29,6 +29,7 @@ export enum SyncActionType {
   Add,
   Remove,
   Drag,
+  DragEnd,
   Rotate,
   UpdateMemo,
 }
