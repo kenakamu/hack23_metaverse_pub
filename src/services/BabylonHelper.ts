@@ -1,6 +1,8 @@
 import * as GUI from "@babylonjs/gui/2D";
 import * as BABYLON from "@babylonjs/core";
 
+const glbImageSource: string = "https://raw.githubusercontent.com/kenakamu/hack23_metaverse_pub/main/src/data/";
+
 // Create base objects for BABYLON scene.
 export function CreateStage(scene: BABYLON.Scene): {
   highlight: BABYLON.HighlightLayer;
@@ -23,9 +25,15 @@ export function CreateStage(scene: BABYLON.Scene): {
     scene
   );
   const groundMat = new BABYLON.StandardMaterial("roofMat");
-  groundMat.diffuseTexture = new BABYLON.Texture("https://raw.githubusercontent.com/kenakamu/hack23_metaverse_pub/main/src/data/ground_materials.jpg", scene);
+  groundMat.diffuseTexture = new BABYLON.Texture(`${glbImageSource}/ground_material.jpg`, scene);
   ground.material = groundMat;
   return { highlight, camera, ground, canvas };
+}
+
+export async function ImportGlbAsync(glbFileName: string, scene: BABYLON.Scene): Promise<BABYLON.AbstractMesh> {
+  // Getting the mesh from the glb file and take the second mesh as it's model (the first one is __root__)
+  let mesh = (await BABYLON.SceneLoader.ImportMeshAsync("", glbImageSource, glbFileName, scene)).meshes[1]
+  return mesh;
 }
 
 export function CreateButton(

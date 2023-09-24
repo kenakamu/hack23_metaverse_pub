@@ -9,12 +9,11 @@ import { LiveShareHost, app } from "@microsoft/teams-js";
 import { LiveState, LivePresence, LivePresenceUser, ILiveShareJoinResults, LiveShareClient, TestLiveShareHost } from "@microsoft/live-share";
 import { ContainerSchema, IFluidContainer, IValueChanged, SharedMap, } from "fluid-framework";
 import { IRepositoryService, LocalStorageRepositoryService, } from "../services/RepositoryService";
-import { CreateStage, CreateButton, CreateInput } from "../services/BabylonHelper";
+import { CreateStage, CreateButton, CreateInput, ImportGlbAsync } from "../services/BabylonHelper";
 import { MeshData } from "../models/MeshData";
 import { DragInfo, RotateInfo, SyncActionType, ICameraControlInfo } from "../models/SyncInfo";
 import { Inspector } from "@babylonjs/inspector";
 
-const glbImageSource: string = "https://raw.githubusercontent.com/kenakamu/hack23_metaverse_pub/main/src/data/";
 const inTeams = new URL(window.location.href).searchParams.get("inTeams") === "1";
 
 export const StageView = (): JSX.Element => {
@@ -199,8 +198,7 @@ export const StageView = (): JSX.Element => {
 
   // Create a mesh from the glb file and the initial values
   async function CreateMeshAsync(scene: BABYLON.Scene, meshData: MeshData) {
-    // Getting the mesh from the glb file and take the second mesh as it's model (the first one is __root__)
-    let mesh = (await BABYLON.SceneLoader.ImportMeshAsync("", glbImageSource, `${meshData.type}.glb`, scene)).meshes[1];
+    let mesh = await ImportGlbAsync(`${meshData.type}.glb`, scene);
     mesh.name = meshData.name;
     mesh.parent = null;
     mesh.scaling = new BABYLON.Vector3(meshData.scale.x, meshData.scale.y, meshData.scale.z);
