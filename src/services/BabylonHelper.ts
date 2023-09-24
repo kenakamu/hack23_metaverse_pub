@@ -18,14 +18,14 @@ export function CreateStage(scene: BABYLON.Scene): {
     new BABYLON.Vector3(0, 1, 0),
     scene
   );
-  light.intensity = 0.7;
+  light.intensity = 1;
   let ground = BABYLON.MeshBuilder.CreateGround(
     "ground",
     { width: 20, height: 20 },
     scene
   );
   const groundMat = new BABYLON.StandardMaterial("roofMat");
-  groundMat.diffuseTexture = new BABYLON.Texture(`${glbImageSource}/ground_material.jpg`, scene);
+  groundMat.diffuseTexture = new BABYLON.Texture(`${glbImageSource}/wood_material.jpg`, scene);
   ground.material = groundMat;
   return { highlight, camera, ground, canvas };
 }
