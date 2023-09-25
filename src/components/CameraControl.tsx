@@ -28,7 +28,7 @@ export const CameraContorl: FC<CameraControlProps> = ({ container, scene }) => {
         initializeStartedRef.current = true;
         InitializeCameraControl();
         initializePresenceLogic(scene);
-    });
+    }, []);
 
     // Use presence to share camera location info
     function initializePresenceLogic(scene: BABYLON.Scene) {
