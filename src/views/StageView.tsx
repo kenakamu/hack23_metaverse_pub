@@ -6,22 +6,26 @@ import * as BABYLON from "@babylonjs/core";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
 import SceneComponent from "babylonjs-hook";
 import { LiveShareHost, app } from "@microsoft/teams-js";
-import { ILiveShareJoinResults, LiveShareClient, TestLiveShareHost } from "@microsoft/live-share";
+import { LiveState, LivePresence, ILiveShareJoinResults, LiveShareClient, TestLiveShareHost } from "@microsoft/live-share";
 import { ContainerSchema, IFluidContainer, IValueChanged, SharedMap, } from "fluid-framework";
 import { IRepositoryService, LocalStorageRepositoryService, } from "../services/RepositoryService";
-import { CreateStage, CreateButton, CreateInput } from "../services/BabylonHelper";
+import { CreateStage, CreateButton, CreateInput, ImportGlbAsync } from "../services/BabylonHelper";
 import { MeshData } from "../models/MeshData";
-import { DragInfo, RotateInfo, SyncActionType } from "../models/SyncInfo";
+import { DragInfo, RotateInfo, SyncActionType, ICameraControlInfo } from "../models/SyncInfo";
+import { CameraContorl } from "../components/CameraControl";
 import { Inspector } from "@babylonjs/inspector";
 
-const glbImageSource: string = "https://raw.githubusercontent.com/kenakamu/hack23_metaverse_pub/main/src/data/";
 const inTeams = new URL(window.location.href).searchParams.get("inTeams") === "1";
 
 export const StageView = (): JSX.Element => {
   const [container, setContainer] = useState<IFluidContainer>();
+  const [scene, setScene] = useState<BABYLON.Scene>();
+
   const containerSchema: ContainerSchema = {
     initialObjects: {
-      meshSharedMap: SharedMap
+      presence: LivePresence<ICameraControlInfo>,
+      meshSharedMap: SharedMap,
+      takeControl: LiveState,
     },
   };
   const initializeStartedRef = useRef(false);
@@ -51,7 +55,7 @@ export const StageView = (): JSX.Element => {
         console.error(error);
       }
     };
-    
+
     const joinContainer = async () => {
       const host = inTeams ? LiveShareHost.create() : TestLiveShareHost.create();
       const client = new LiveShareClient(host);
@@ -65,6 +69,7 @@ export const StageView = (): JSX.Element => {
   });
 
   const onSceneReady = (scene: BABYLON.Scene) => {
+    setScene(scene);
     // Uncomment the following to show the BabylonJS Inspector.
     //Inspector.Show(scene, {});
 
@@ -75,22 +80,21 @@ export const StageView = (): JSX.Element => {
     canvas = stage.canvas;
 
     if (meshDataList.length === 0) meshDataList = repository.getData("meshes");
+    console.log("StageView.tsx: initializing mesh data");
     meshDataList?.map((meshData: MeshData) => CreateMeshAsync(scene, meshData));
 
     AddUIControl(scene);
     SetupPointerBehavior(scene);
-    SetupMouseWheelBehavior(scene);
+    SetupMouseWheelBehavior();
 
-    // setup meshSharedMap to synchronize between clients if in Teams.
-    // if (inTeams) {
+    // setup to synchronize between clients
     meshSharedMap = container!.initialObjects.meshSharedMap as SharedMap;
     meshSharedMap.on("valueChanged", (changed: IValueChanged, local: boolean) => {
       if (!local) {
         SyncMesh(scene, changed, meshSharedMap);
       }
     });
-    // }
-  };
+  }
 
   const onRender = (scene: BABYLON.Scene) => {
   };
@@ -104,13 +108,13 @@ export const StageView = (): JSX.Element => {
 
   // Create a pointer drag behavior for the mesh.
   function GetPointerBehavior(): BABYLON.PointerDragBehavior {
-    const pointerDragBehavior = new BABYLON.PointerDragBehavior({
+    let pointerDragBehavior = new BABYLON.PointerDragBehavior({
       dragPlaneNormal: new BABYLON.Vector3(0, 1, 0), // meshes should be draggable for X and Z axies only.
     });
 
     pointerDragBehavior.onDragObservable.add((event) => {
       // propagete the position change to other clients
-      PropagateChanes(
+      meshSharedMap.set(
         `${SyncActionType.Drag}_${currentMesh!.name}`,
         new DragInfo(currentMesh!.name, currentMesh!.position.x, currentMesh!.position.z)
       );
@@ -126,11 +130,11 @@ export const StageView = (): JSX.Element => {
           repository.setData("meshes", meshDataList);
           return true;
         }
-        return true;
+        return false;
       });
       // propagete the position change to other clients
-      PropagateChanes(
-        `${SyncActionType.Drag}_${currentMesh!.name}`,
+      meshSharedMap.set(
+        `${SyncActionType.DragEnd}_${currentMesh!.name}`,
         new DragInfo(currentMesh!.name, currentMesh!.position.x, currentMesh!.position.z),
       );
     });
@@ -139,8 +143,7 @@ export const StageView = (): JSX.Element => {
 
   // Create a mesh from the glb file and the initial values
   async function CreateMeshAsync(scene: BABYLON.Scene, meshData: MeshData) {
-    // Getting the mesh from the glb file and take the second mesh as it's model (the first one is __root__)
-    let mesh = (await BABYLON.SceneLoader.ImportMeshAsync("", glbImageSource, `${meshData.type}.glb`, scene)).meshes[1];
+    let mesh = await ImportGlbAsync(`${meshData.type}.glb`, scene);
     mesh.name = meshData.name;
     mesh.parent = null;
     mesh.scaling = new BABYLON.Vector3(meshData.scale.x, meshData.scale.y, meshData.scale.z);
@@ -161,6 +164,9 @@ export const StageView = (): JSX.Element => {
   ) {
     // Sync mesh action between clients.
     if (changed.key.startsWith(SyncActionType.Add.toString())) {
+      let changedMeshData = meshSharedMap.get(changed.key) as MeshData;
+      let meshData = meshDataList.find((meshData: MeshData) => changedMeshData.name === meshData.name);
+      if (meshData !== undefined) return;
       CreateMeshAndUpateRepoAsync(scene, meshSharedMap.get(changed.key) as MeshData);
     } else if (changed.key.startsWith(SyncActionType.Remove.toString())) {
       meshDataList.some((mesh: any, index: number) => {
@@ -176,7 +182,7 @@ export const StageView = (): JSX.Element => {
           }
           return true;
         }
-        return true;
+        return false;
       });
     } else if (changed.key.startsWith(SyncActionType.UpdateMemo.toString())) {
       let meshData = meshDataList.find((meshData: MeshData) => meshSharedMap.get(changed.key).name === meshData.name);
@@ -193,19 +199,17 @@ export const StageView = (): JSX.Element => {
         mesh!.position.x = dragLocation.x;
         mesh!.position.z = dragLocation.z;
       }
+      if (changed.key.startsWith(SyncActionType.DragEnd.toString())) {
+        repository.setData("meshes", meshDataList);
+      }
     } else if (changed.key.startsWith(SyncActionType.Rotate.toString())) {
       let rotateInfo: RotateInfo = meshSharedMap.get(changed.key) as RotateInfo;
       let meshData = meshDataList.find((meshData: MeshData) => meshSharedMap.get(changed.key).name === meshData.name);
       if (meshData !== undefined) meshData!.rotation.y = rotateInfo.y;
+      repository.setData("meshes", meshDataList);
       let mesh = scene.getMeshByName(meshSharedMap.get(changed.key).name);
       if (mesh !== null) mesh!.rotation.y = rotateInfo.y;
     }
-  }
-
-  // Propagate changes to other clients if in Teams.
-  function PropagateChanes(key: string, value: any) {
-    // if (!inTeams) return;
-    meshSharedMap.set(key, value);
   }
 
   // Add Babylon GUI controls.
@@ -226,12 +230,12 @@ export const StageView = (): JSX.Element => {
       );
 
       await CreateMeshAndUpateRepoAsync(scene, newMesh);
-      PropagateChanes(`${SyncActionType.Add}_${newMesh.name}`, newMesh);
+      meshSharedMap.set(`${SyncActionType.Add}_${newMesh.name}`, newMesh);
     });
 
     // Add chair button
-    const addChiarButton = CreateButton("addChiarButton", "Add Chair", "100px", "20px", true, { top: "30px", left: "10px" });
-    addChiarButton.onPointerClickObservable.add(async () => {
+    const addChairButton = CreateButton("addChairButton", "Add Chair", "100px", "20px", true, { top: "30px", left: "10px" });
+    addChairButton.onPointerClickObservable.add(async () => {
       let name = uuid();
       let newMesh = new MeshData(
         name,
@@ -242,7 +246,7 @@ export const StageView = (): JSX.Element => {
         "This is chair-" + name
       );
       await CreateMeshAndUpateRepoAsync(scene, newMesh);
-      PropagateChanes(`${SyncActionType.Add}_${newMesh.name}`, newMesh);
+      meshSharedMap.set(`${SyncActionType.Add}_${newMesh.name}`, newMesh);
     });
 
     // Remove All Button
@@ -251,7 +255,7 @@ export const StageView = (): JSX.Element => {
       removeButton.isVisible = memoButton.isVisible = closeMemoButton.isVisible = memoInput.isVisible = false;
       meshDataList.forEach((meshData: MeshData) => {
         scene.getMeshByName(meshData.name)?.dispose();
-        PropagateChanes(`${SyncActionType.Remove}_${meshData.name}`, meshData.name);
+        meshSharedMap.set(`${SyncActionType.Remove}_${meshData.name}`, meshData.name);
       });
       meshDataList = [];
       repository.setData("meshes", meshDataList);
@@ -266,10 +270,10 @@ export const StageView = (): JSX.Element => {
         if (mesh.name === currentMesh!.name) {
           meshDataList.splice(index, 1);
           repository.setData("meshes", meshDataList);
-          PropagateChanes(`${SyncActionType.Remove}_${mesh.name}`, mesh.name);
+          meshSharedMap.set(`${SyncActionType.Remove}_${mesh.name}`, mesh.name);
           return true;
         }
-        return true;
+        return false;
       });
     });
 
@@ -288,7 +292,7 @@ export const StageView = (): JSX.Element => {
       if (meshData !== undefined && meshData.name !== currentMesh!.name) {
         meshData.memo = value.text;
         repository.setData("meshes", meshDataList);
-        PropagateChanes(`${SyncActionType.UpdateMemo}_${meshData.name}`, {
+        meshSharedMap.set(`${SyncActionType.UpdateMemo}_${meshData.name}`, {
           name: meshData.name,
           memo: value.text,
         });
@@ -296,7 +300,7 @@ export const StageView = (): JSX.Element => {
     });
 
     advancedTexture.addControl(addTableButton);
-    advancedTexture.addControl(addChiarButton);
+    advancedTexture.addControl(addChairButton);
     advancedTexture.addControl(removeAllButton);
     advancedTexture.addControl(removeButton);
     advancedTexture.addControl(memoButton);
@@ -382,7 +386,7 @@ export const StageView = (): JSX.Element => {
   }
 
   // Setup mouse wheel behavior for camera and the selected mesh.
-  function SetupMouseWheelBehavior(scene: BABYLON.Scene) {
+  function SetupMouseWheelBehavior() {
     window.addEventListener("wheel", (event) => {
       if (currentMesh !== null) {
         let delta = Math.sign(event.deltaY);
@@ -393,10 +397,10 @@ export const StageView = (): JSX.Element => {
           meshData.rotation.y = currentMesh!.rotation.y;
           repository.setData("meshes", meshDataList);
         }
-        PropagateChanes(`${SyncActionType.Rotate}_${currentMesh!.name}`, {
-          name: currentMesh!.name,
-          y: currentMesh!.rotation.y,
-        });
+        meshSharedMap.set(
+          `${SyncActionType.Rotate}_${currentMesh!.name}`,
+          new RotateInfo(currentMesh!.name, currentMesh!.rotation.y,)
+        );
       }
     });
   }
@@ -411,10 +415,13 @@ export const StageView = (): JSX.Element => {
             onRender={onRender}
             id="my-canvas"
           />
+          {scene ? (
+            <div>
+              <CameraContorl container={container} scene={scene} />
+            </div>
+          ) : (<div></div>)}
         </div>
-      ) : (
-        <div></div>
-      )}
+      ) : (<div></div>)}
     </div>
   );
 };
