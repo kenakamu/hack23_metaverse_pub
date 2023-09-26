@@ -289,7 +289,7 @@ export const StageView = (): JSX.Element => {
     memoInput = CreateInput();
     memoInput.onBlurObservable.add((value) => {
       let meshData = meshDataList.find((meshData: MeshData) => meshData.name === currentMesh!.name);
-      if (meshData !== undefined && meshData.name !== currentMesh!.name) {
+      if (meshData !== undefined && meshData.name === currentMesh!.name) {
         meshData.memo = value.text;
         repository.setData("meshes", meshDataList);
         meshSharedMap.set(`${SyncActionType.UpdateMemo}_${meshData.name}`, {
