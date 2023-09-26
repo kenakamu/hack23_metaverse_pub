@@ -6,12 +6,12 @@ import * as BABYLON from "@babylonjs/core";
 import "@babylonjs/loaders/glTF/2.0/glTFLoader";
 import SceneComponent from "babylonjs-hook";
 import { LiveShareHost, app } from "@microsoft/teams-js";
-import { LiveState, LivePresence, ILiveShareJoinResults, LiveShareClient, TestLiveShareHost } from "@microsoft/live-share";
+import { LiveState, ILiveShareJoinResults, LiveShareClient, TestLiveShareHost } from "@microsoft/live-share";
 import { ContainerSchema, IFluidContainer, IValueChanged, SharedMap, } from "fluid-framework";
 import { IRepositoryService, LocalStorageRepositoryService, } from "../services/RepositoryService";
 import { CreateStage, CreateButton, CreateInput, ImportGlbAsync } from "../services/BabylonHelper";
 import { MeshData } from "../models/MeshData";
-import { DragInfo, RotateInfo, SyncActionType, ICameraControlInfo } from "../models/SyncInfo";
+import { DragInfo, RotateInfo, SyncActionType } from "../models/SyncInfo";
 import { CameraContorl } from "../components/CameraControl";
 import { Inspector } from "@babylonjs/inspector";
 
@@ -23,8 +23,8 @@ export const StageView = (): JSX.Element => {
 
   const containerSchema: ContainerSchema = {
     initialObjects: {
-      presence: LivePresence<ICameraControlInfo>,
       meshSharedMap: SharedMap,
+      cameraSharedMap: SharedMap,
       takeControl: LiveState,
     },
   };
