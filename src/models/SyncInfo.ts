@@ -20,11 +20,6 @@ export class CameraControlInfo {
   ) { }
 }
 
-export interface ICameraControlInfo {
-  cameraPosition: BABYLON.Vector3,
-  cameraRotation: BABYLON.Vector3
-}
-
 export enum SyncActionType {
   Add,
   Remove,
@@ -32,4 +27,5 @@ export enum SyncActionType {
   DragEnd,
   Rotate,
   UpdateMemo,
+  CameraMove,
 }

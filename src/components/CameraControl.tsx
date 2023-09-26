@@ -1,8 +1,8 @@
 import { FC, useEffect, useRef } from "react";
 import * as BABYLON from "@babylonjs/core";
-import { LiveState, LivePresence, LivePresenceUser } from "@microsoft/live-share";
-import { IFluidContainer } from "fluid-framework";
-import { ICameraControlInfo } from "../models/SyncInfo";
+import { LiveState } from "@microsoft/live-share";
+import { IFluidContainer, IValueChanged, SharedMap } from "fluid-framework";
+import { CameraControlInfo, SyncActionType } from "../models/SyncInfo";
 
 interface CameraControlProps {
     container: IFluidContainer;
@@ -13,7 +13,7 @@ export const CameraContorl: FC<CameraControlProps> = ({ container, scene }) => {
 
     const updateFrequencies: number = 100;
     const framesToCompensate: number = 1 + updateFrequencies / (1000 / 60);
-    let presence: LivePresence<ICameraControlInfo>;
+    let cameraSharedMap: SharedMap;
     let takeControl: LiveState;
     let takeCamControlButton: HTMLButtonElement;
     let remoteControlled: boolean;
@@ -32,29 +32,27 @@ export const CameraContorl: FC<CameraControlProps> = ({ container, scene }) => {
 
     // Use presence to share camera location info
     function initializePresenceLogic(scene: BABYLON.Scene) {
-        presence = container!.initialObjects.presence as LivePresence<ICameraControlInfo>;
-        presence.on("presenceChanged", (userPresence: LivePresenceUser<ICameraControlInfo>, local: boolean) => {
-            // If it's not the local user
+        cameraSharedMap = container!.initialObjects.cameraSharedMap as SharedMap;
+        cameraSharedMap.on("valueChanged", (changed: IValueChanged, local: boolean) => {
             if (!local) {
-                console.dir(userPresence);
-                if (userPresence.state === "online") {
-                    if (remoteControlled) {
-                        let localCamera = scene.activeCamera as BABYLON.ArcRotateCamera;
-                        BABYLON.Animation.CreateAndStartAnimation("camerapos",
-                            scene.activeCamera,
-                            "position", 60, framesToCompensate,
-                            localCamera.position,
-                            new BABYLON.Vector3(userPresence.data!.cameraPosition._x, userPresence.data!.cameraPosition._y - 0.7, userPresence.data!.cameraPosition._z), 0);
+                let cameraConrolInfo: CameraControlInfo = cameraSharedMap.get(changed.key) as CameraControlInfo;
+                if (remoteControlled) {
+                    let localCamera = scene.activeCamera as BABYLON.ArcRotateCamera;
+                    BABYLON.Animation.CreateAndStartAnimation("camerapos",
+                        scene.activeCamera,
+                        "position", 60, framesToCompensate,
+                        localCamera.position,
+                        new BABYLON.Vector3(cameraConrolInfo.cameraPosition._x, cameraConrolInfo.cameraPosition._y - 0.7, cameraConrolInfo.cameraPosition._z), 0);
 
-                        BABYLON.Animation.CreateAndStartAnimation("camerarot",
-                            scene.activeCamera,
-                            "rotation", 60, framesToCompensate,
-                            localCamera.rotation,
-                            new BABYLON.Vector3(userPresence.data!.cameraPosition._x, userPresence.data!.cameraPosition._y, userPresence.data!.cameraPosition._z), 0);
-                    }
+                    BABYLON.Animation.CreateAndStartAnimation("camerarot",
+                        scene.activeCamera,
+                        "rotation", 60, framesToCompensate,
+                        localCamera.rotation,
+                        new BABYLON.Vector3(cameraConrolInfo.cameraPosition._x, cameraConrolInfo.cameraPosition._y, cameraConrolInfo.cameraPosition._z), 0);
                 }
             }
         });
+
         takeControl = container!.initialObjects.takeControl as LiveState;
         takeControl.on("stateChanged", (status, local) => {
             if (!local) {
@@ -62,37 +60,25 @@ export const CameraContorl: FC<CameraControlProps> = ({ container, scene }) => {
                 remoteControlled = status;
 
                 let localCamera = scene.activeCamera as BABYLON.ArcRotateCamera;
-                // Someone is now taking control your camera
                 if (remoteControlled) {
                     currentCameraPosition = localCamera.position.clone();
                     currentCameraRotation = localCamera.rotation.clone();
-                    // Removing input focus from the canvas to avoid moving the camera
                     localCamera.detachControl();
                 }
                 else {
                     localCamera.position = currentCameraPosition;
                     localCamera.rotation = currentCameraRotation;
-                    // Re-attaching input focus to the canvas to allow moving the camera
                     localCamera.attachControl();
                 }
             }
         });
         (async () => await takeControl.initialize(false))();
-        (async () => await presence.initialize())();
         lastTime = new Date().getTime();
         let localCamera = scene.activeCamera as BABYLON.ArcRotateCamera;
-        // Babylon.js event sent everytime the view matrix is changed
-        // Useful to know either a position, a rotation or
-        // both have been updated
         localCamera.onViewMatrixChangedObservable.add(async () => {
-            // sending new camera position & rotation updates every 100 ms
-            // to avoid sending too frequent updates over the network
-            if (!remoteControlled && new Date().getTime() - lastTime >= updateFrequencies && presence.isInitialized) {
-                let data: ICameraControlInfo = {
-                    cameraPosition: localCamera.position,
-                    cameraRotation: localCamera.rotation,
-                };
-                await presence.update(data);
+            if (!remoteControlled && new Date().getTime() - lastTime >= updateFrequencies) {
+                let data = new CameraControlInfo(localCamera.position, localCamera.rotation);
+                await cameraSharedMap.set(SyncActionType.CameraMove.toString(), data);
                 lastTime = new Date().getTime();
             }
         });
